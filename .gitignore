@@ -1,0 +1,13 @@
+# Ignorar entornos virtuales en cualquier carpeta
+**/venv/
+**/env/
+
+# Ignorar cachés de Python en cualquier carpeta
+**/__pycache__/
+*.pyc
+
+# Ignorar VSCode
+.vscode/
+
+# Ignorar logs
+**/logs/
