@@ -1,8 +1,9 @@
 import pybullet as p
 import pybullet_data
 import random
+import numpy as np
 
-def create_thief():
+def create_thief(position):
     # Create a collision shape (invisible, used for physics)
     thief_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5])
     # Create a visual shape (this is what you see)
@@ -11,22 +12,25 @@ def create_thief():
     thief_body = p.createMultiBody(baseMass=1,
                                 baseCollisionShapeIndex=thief_collision,
                                 baseVisualShapeIndex=thief_visual,
-                                basePosition=[7, 0, 0.5])
+                                basePosition=[position[0], position[1], 0.5])
     p.changeDynamics(thief_body, -1, lateralFriction=5)
     return thief_body
 
-def create_object():
+def create_object(grid):
+    zeros = np.argwhere(grid == 0)
+    position = random.choice(zeros)
     # Create a collision shape (invisible, used for physics)
     obj_collision = p.createCollisionShape(p.GEOM_CAPSULE, radius = 0.5)
     # Create a visual shape (this is what you see)
     obj_visual = p.createVisualShape(p.GEOM_CAPSULE, radius = 0.5, rgbaColor=[1, 1, 0, 1])
     # Create a rigid body with both collision and visual shapes
+    grid[position[0],position[1]] = 3
     obj_body = p.createMultiBody(baseMass=0,
                                 baseCollisionShapeIndex=obj_collision,
                                 baseVisualShapeIndex=obj_visual,
-                                basePosition=[7, 7, 0.5])
+                                basePosition=[position[0], position[1], 0.5])
     p.changeDynamics(obj_body, -1, lateralFriction=5)
-    return obj_body
+    return obj_body, grid, position
 
 def create_floor():
     # Create a collision shape (invisible, used for physics)
@@ -63,24 +67,39 @@ def create_pillar(center_positions):
                                 baseCollisionShapeIndex=pillar_collision,
                                 baseVisualShapeIndex=pillar_visual,
                                 basePosition=center_positions)
-    return pillar_body
 
-def create_structure():
-    wall_1 = create_wall(0.5, 7.5, [0, 7, 1])
-    wall_2 = create_wall(0.5, 7.5, [14, 7, 1])
-    wall_3 = create_wall(6.5, 0.5, [7, 14, 1])
-    wall_4 = create_wall(2.5, 0.5, [11, 0, 1])
-    wall_5 = create_wall(2.5, 0.5, [3, 0, 1])
-    pillar_1 = create_pillar([5,3,1])
-    pillar_2 = create_pillar([9,3,1])
-    pillar_3 = create_pillar([2,5,1])
-    pillar_4 = create_pillar([12,5,1])
-    pillar_5 = create_pillar([2,9,1])
-    pillar_6 = create_pillar([12,9,1])
-    pillar_7 = create_pillar([5,11,1])
-    pillar_8 = create_pillar([9,11,1])
+def create_structure(grid):
+    create_wall(0.5, 7.5, [0, 7, 1])
+    create_wall(0.5, 7.5, [14, 7, 1])
+    create_wall(6.5, 0.5, [7, 14, 1])
+    create_wall(2.5, 0.5, [11, 0, 1])
+    create_wall(2.5, 0.5, [3, 0, 1])
+    for y in range (0,15) : 
+        grid[0,y] = 1
+        grid[14,y] = 1
+    for x in range (1,14):
+        grid[x, 14] = 1
+        if x != 6 and x!=7 and x!= 8 : 
+            grid[x, 0] = 1
+    create_pillar([5,3,1])
+    grid[5,3] = 1
+    create_pillar([9,3,1])
+    grid[9,3] = 1
+    create_pillar([2,5,1])
+    grid[2,5] = 1
+    create_pillar([12,5,1])
+    grid[12,5] = 1
+    create_pillar([2,9,1])
+    grid[2,9] = 1
+    create_pillar([12,9,1])
+    grid[12,9] = 1
+    create_pillar([5,11,1])
+    grid[5,11] = 1
+    create_pillar([9,11,1])
+    grid[9,11] = 1
+    return grid
 
-def camera_watched():
+def set_watched_tiles(grid):
     possible_cameras = [[(4,1),(4,2),(4,4),
                 (5,1),
                 (6,1),(6,2),(6,4),
@@ -103,8 +122,8 @@ def camera_watched():
                  (3,7),(3,8),(3,10)]]
     cameras = random.sample(possible_cameras, k=3)
     for camera in cameras:
-        for tile in camera:
-            floor_properties = {tile:"watched"}
+        for (x,y) in camera:
+            grid[x,y] = 2
             p.createMultiBody(
                 baseMass=0,
                 baseVisualShapeIndex=p.createVisualShape(
@@ -112,11 +131,24 @@ def camera_watched():
                     halfExtents=[0.5, 0.5, 0.05],   # 
                     rgbaColor=[1, 0, 0, 1]       
                 ),
-                basePosition=[tile[0], tile[1], -0.45]  
+                basePosition=[x, y, -0.45]  
             )
-    return floor_properties
+    return grid
 
+def set_exit_tiles():
+    exit_tiles = [(6,0),(7,0),(8,0)]
+    for t in exit_tiles:
+            p.createMultiBody(
+                baseMass=0,
+                baseVisualShapeIndex=p.createVisualShape(
+                    shapeType=p.GEOM_BOX,
+                    halfExtents=[0.5, 0.5, 0.05],   # 
+                    rgbaColor=[0, 1, 0, 1]       
+                ),
+                basePosition=[t[0], t[1], -0.45]  
+            )
 
+"""
 # Connect to GUI
 p.connect(p.GUI)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -133,7 +165,7 @@ floor = create_floor()
 plane_id = p.loadURDF("plane.urdf",basePosition=[7.5, 7.5, -0.5],useFixedBase=True)
 structure = create_structure()
 create_object()
-camera_watched()
+set_watched_tiles()
 
 
 # Turn on gravity (Earth-like)
@@ -142,3 +174,4 @@ p.setGravity(0, 0, -9.8)
 # Run the simulation
 while True:
     p.stepSimulation()
+"""
