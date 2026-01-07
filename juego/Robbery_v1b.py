@@ -11,11 +11,11 @@ from Pybullet_edificio import create_structure, create_floor, set_watched_tiles,
 V1 : 
 Espacio discreto
 5 acciones (left, right, up, down, take)
-recompensas : fijas (+ al tomar objeto y salir  - al perder o mover en una pared) + dinamica al acercarse del objetivo
+recompensas : fijas (+ al tomar objeto  - al perder o mover en una pared) + dinamica al acercarse del objetivo
 zonas de camaras : cuadradas y seleccionada al azar entre 6
 """
 
-class ThiefEnv(gym.Env):
+class ThiefEnv_V1b(gym.Env):
     metadata = {"render_modes": ["human"]}
 
     def __init__(self, render_mode=None):
@@ -36,13 +36,11 @@ class ThiefEnv(gym.Env):
         self.observation_space = spaces.Dict({
             "grid": spaces.Box(low=0, high=3, shape=(3, 3), dtype=np.int8), # 3x3 grid around thief (integers 0–3)
             "goal": spaces.Box(low=0, high=15, shape=(2,), dtype=np.int32),
-            "exits": spaces.Box(low=0, high=15, shape=(3,2), dtype=np.int32),
             "has_object": spaces.Discrete(2),
             "alert_flag": spaces.Discrete(4), # e.g. binary variable
         })
         self.grid = np.zeros((3,3), dtype=np.int8)
         self.goal = np.zeros((1,1), dtype=np.int8)
-        self.exits = np.zeros((1,3), dtype=np.int8)
         self.has_object = 0
         self.alert_flag = 0
 
@@ -55,7 +53,9 @@ class ThiefEnv(gym.Env):
         self.grid.fill(0)  # 0 = empty
         create_floor()
         self.grid = create_structure(self.grid)     # walls = 1
+        print(f"before cameras: {self.grid}")
         self.grid = set_watched_tiles(self.grid)    # watched = 2
+        print(f"after cameras: {self.grid}")
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
         self.goal = np.array([self.object_pos[0], self.object_pos[1]], dtype=np.int32) # Knows position of object
         self.exits = np.array([[7, 0],[6, 0],[8, 0]], dtype=np.int32) # Knows position of exits
@@ -93,14 +93,15 @@ class ThiefEnv(gym.Env):
 
     def take_object(self):
         r = 0
+        terminated = False
         if self.thief_pos[0] == self.object_pos[0] and self.thief_pos[1] == self.object_pos[1] and self.has_object == 0: 
             self.has_object = 1
             p.removeBody(self.object_body)
             self.object_body = None
-            if self.render_mode=="human":
-                set_exit_tiles()
             r +=10
-        return r
+            terminated = True
+            r +=50
+        return r, terminated
     
     def distance (self, object):
         dist = np.linalg.norm(self.thief_pos - object)/10
@@ -114,6 +115,9 @@ class ThiefEnv(gym.Env):
         return -dist
 
     def step(self, action):
+        terminated = False
+        truncated = False
+
         if action < 4: #walking actions
             move = self.actions[action]
             target = self.thief_pos + move
@@ -130,7 +134,8 @@ class ThiefEnv(gym.Env):
                 reward = self.calculate_reward()
         else : #Take object
             reward = self.calculate_reward()
-            reward += self.take_object()
+            r, terminated = self.take_object()
+            reward += r
             
         # Check camera watched tile
         if self.grid[self.thief_pos[0], self.thief_pos[1]] == 2:
@@ -138,17 +143,10 @@ class ThiefEnv(gym.Env):
             self.alert_flag +=1
         else : 
             self.alert_flag = 0
-        
-        terminated = False
-        truncated = False
 
         if self.alert_flag >2 : 
             terminated = True
-            reward = -50
-
-        if self.has_object==1 and np.any(np.all(self.exits == self.thief_pos, axis=1)):
-            terminated= True
-            reward = 50
+            reward = -50            
 
         obs = {"grid":self._get_observation(),
                "goal": self.goal,
@@ -179,12 +177,11 @@ class ThiefEnv(gym.Env):
             p.disconnect(self._physics_client)
 
 
-
-
-env = ThiefEnv(render_mode="human")
+"""
+env = ThiefEnv_V1b(render_mode="human")
 obs, info = env.reset()
 print (env.grid)
-"""
+
 for i in range(200):
     action = env.action_space.sample()
     print (action)
@@ -194,7 +191,7 @@ for i in range(200):
     if terminated or truncated:
         print ("terminated")
         env.reset()
-"""
+
 for i in range(200):
     # Pedir acción al usuario
     try:
@@ -215,4 +212,4 @@ for i in range(200):
     if terminated or truncated:
         print("Terminado")
         obs, info = env.reset()
-
+"""
