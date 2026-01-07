@@ -98,9 +98,8 @@ class ThiefEnv_V1b(gym.Env):
             self.has_object = 1
             p.removeBody(self.object_body)
             self.object_body = None
-            r +=10
-            terminated = True
             r +=50
+            terminated = True
         return r, terminated
     
     def distance (self, object):
