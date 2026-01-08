@@ -181,10 +181,11 @@ class ThiefEnv_V1c(gym.Env):
             p.disconnect(self._physics_client)
 
 
-
-"""env = ThiefEnv_V1c(render_mode="human")
+"""
+env = ThiefEnv_V1c(render_mode="human")
 obs, info = env.reset()
 print (env.grid)
+
 
 for i in range(200):
     action = env.action_space.sample()

@@ -14,7 +14,7 @@ def create_thief(position, pos_height = 0.5, Mass = 0):
                                 baseCollisionShapeIndex=thief_collision,
                                 baseVisualShapeIndex=thief_visual,
                                 basePosition=[position[0], position[1], pos_height])
-    p.changeDynamics(thief_body, -1, lateralFriction=5)
+    p.changeDynamics(thief_body, -1, lateralFriction=1)
     return thief_body
 
 def create_object(grid, pos_height=0.5):
@@ -43,7 +43,7 @@ def create_floor(pos_height=-0.2):
                                 baseCollisionShapeIndex=floor_collision,
                                 baseVisualShapeIndex=floor_visual,
                                 basePosition=[7, 7, pos_height])
-    p.changeDynamics(floor_body, -1, lateralFriction=5)
+    p.changeDynamics(floor_body, -1, lateralFriction=1)
     return floor_body
 
 def create_wall(half_width, half_length, center_positions):
@@ -68,42 +68,53 @@ def create_pillar(center_positions):
                                 baseCollisionShapeIndex=pillar_collision,
                                 baseVisualShapeIndex=pillar_visual,
                                 basePosition=center_positions)
+    return pillar_body
 
-def create_structure(grid=None, pos_height=1):
-    create_wall(0.5, 7.5, [0, 7, pos_height])
-    create_wall(0.5, 7.5, [14, 7, pos_height])
-    create_wall(6.5, 0.5, [7, 14, pos_height])
-    create_wall(2.5, 0.5, [11, 0, pos_height])
-    create_wall(2.5, 0.5, [3, 0, pos_height])
+def create_structure(grid, types=None, pos_height=1):
+    w1 = create_wall(0.5, 7.5, [0, 7, pos_height])
+    w2 = create_wall(0.5, 7.5, [14, 7, pos_height])
+    w3 = create_wall(6.5, 0.5, [7, 14, pos_height])
+    w4 = create_wall(2.5, 0.5, [11, 0, pos_height])
+    w5 = create_wall(2.5, 0.5, [3, 0, pos_height])
+    w6 = create_wall(2.5, 0.5, [7, -1, pos_height])
+    walls = [w1, w2, w3, w4, w5, w6]
 
-    create_pillar([5,3,pos_height])
-    create_pillar([9,3,pos_height])
-    create_pillar([2,5,pos_height])
-    create_pillar([12,5,pos_height])
-    create_pillar([2,9,pos_height])
-    create_pillar([12,9,pos_height])
-    create_pillar([5,11,pos_height])
-    create_pillar([9,11,pos_height])
+    p1 = create_pillar([5,3,pos_height])
+    p2 = create_pillar([9,3,pos_height])
+    p3 = create_pillar([2,5,pos_height])
+    p4 = create_pillar([12,5,pos_height])
+    p5 = create_pillar([2,9,pos_height])
+    p6 = create_pillar([12,9,pos_height])
+    p7 = create_pillar([5,11,pos_height])
+    p8 = create_pillar([9,11,pos_height])
+    pillars = [p1, p2, p3, p4, p5, p6, p7, p8]
 
-    if grid is not None :
-        #Account the Walls
-        for y in range (0,15) : 
-            grid[0,y] = 1
-            grid[14,y] = 1
-        for x in range (1,14):
-            grid[x, 14] = 1
-            if x != 6 and x!=7 and x!= 8 : 
-                grid[x, 0] = 1
-        #Account the pillars
-        grid[5,3] = 1
-        grid[9,3] = 1
-        grid[2,5] = 1
-        grid[12,5] = 1
-        grid[2,9] = 1
-        grid[12,9] = 1
-        grid[5,11] = 1
-        grid[9,11] = 1
-        return grid
+    #Account the Walls
+    for y in range (0,15) : 
+        grid[0,y] = 1
+        grid[14,y] = 1
+    for x in range (1,14):
+        grid[x, 14] = 1
+        if x != 6 and x!=7 and x!= 8 : 
+            grid[x, 0] = 1
+    #Account the pillars
+    grid[5,3] = 1
+    grid[9,3] = 1
+    grid[2,5] = 1
+    grid[12,5] = 1
+    grid[2,9] = 1
+    grid[12,9] = 1
+    grid[5,11] = 1
+    grid[9,11] = 1
+
+    if types is not None :
+        for w in walls :
+            types[w] = 1
+        for p in pillars :
+            types[p] = 1
+        return types, grid
+    
+    return grid
 
 def set_watched_tiles(grid):
     possible_cameras = [[(4,1),(4,2),(4,4),
@@ -141,18 +152,20 @@ def set_watched_tiles(grid):
             )
     return grid
 
-def set_exit_tiles():
+def set_exit_tiles(height=-0.45):
     exit_tiles = [(6,0),(7,0),(8,0)]
+    ids = []
     for t in exit_tiles:
-            p.createMultiBody(
-                baseMass=0,
-                baseVisualShapeIndex=p.createVisualShape(
-                    shapeType=p.GEOM_BOX,
-                    halfExtents=[0.5, 0.5, 0.05],   # 
-                    rgbaColor=[0, 1, 0, 1]       
-                ),
-                basePosition=[t[0], t[1], -0.45]  
-            )
+        exit_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.05])
+        exit_visual = p.createVisualShape(shapeType=p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.05], rgbaColor=[0, 1, 0, 1])
+        body = p.createMultiBody(
+            baseMass=0,
+            baseCollisionShapeIndex=exit_collision,
+            baseVisualShapeIndex=exit_visual,
+            basePosition=[t[0], t[1], height]  
+        )
+        ids.append(body)
+    return ids
 
 
 """

@@ -5,17 +5,17 @@ import pybullet as p
 import pybullet_data
 import time
 import random
-from Pybullet_edificio import create_structure, create_floor, set_watched_tiles, create_thief, create_object, set_exit_tiles
-
+from Pybullet_edificio import create_structure, create_floor, create_thief, create_object, set_exit_tiles
+from Pybullet_sensors import *
 """
 V2 : 
 Espacio continuo
-5 acciones (left, right, up, down, take)
-recompensas : fijas (+ al tomar objeto y salir  - al perder o mover en una pared) + dinamica al acercarse del objetivo
-zonas de camaras : cuadradas y seleccionada al azar entre 6
+2 tipos acciones : rotacion [-1,1] equivalencia -70°,70° / velocidad [-1,1] 
+recompensas : fijas (+ al encontrar objeto y salir  - al perder) + dinamica al acercarse del objetivo
+zonas de camaras : circulares y rotativas 4 seleccionadas al azar entre 8
 """
 
-class ThiefEnv(gym.Env):
+class ThiefEnv_cont(gym.Env):
     metadata = {"render_modes": ["human"]}
 
     def __init__(self, render_mode=None):
@@ -23,23 +23,21 @@ class ThiefEnv(gym.Env):
         self.render_mode = render_mode
         self._physics_client = None
 
-        # Action: 4 discrete moves
-        self.action_space = spaces.Discrete(5)
-        self.actions = {
-            0: (0,1),
-            1: (0,-1),
-            2: (-1,0),
-            3: (1,0),
-            4: None}
+        # Action: 2 continuous moves
+        self.action_space = spaces.Box(
+            low=np.array([-1.0, -1.0], dtype=np.float32),
+            high=np.array([ 1.0,  1.0], dtype=np.float32),
+            dtype=np.float32)
         
         # Observation : discrete
         self.observation_space = spaces.Dict({
-            "grid": spaces.Box(low=0, high=3, shape=(3, 3), dtype=np.int8), # 3x3 grid around thief (integers 0–3)
+            "ray_view": spaces.Box(low=0.0,high=1.0,shape=(22,),dtype=np.float32),
             "goal": spaces.Box(low=0, high=15, shape=(2,), dtype=np.int32),
             "exits": spaces.Box(low=0, high=15, shape=(3,2), dtype=np.int32),
             "has_object": spaces.Discrete(2),
-            "alert_flag": spaces.Discrete(4), # e.g. binary variable
+            "alert_flag": spaces.Discrete(6), # e.g. binary variable
         })
+
         self.grid = np.zeros((3,3), dtype=np.int8)
         self.goal = np.zeros((1,1), dtype=np.int8)
         self.exits = np.zeros((1,3), dtype=np.int8)
@@ -49,14 +47,33 @@ class ThiefEnv(gym.Env):
         #Other objects
         self.object_pos = None
         self.grid = np.zeros((15,15), dtype=np.int8) # Store world layout (walls, watched tiles, etc.)
+        self.types = {}
+        self.cameras = None
+
         
     
     def _load_world(self):
         self.grid.fill(0)  # 0 = empty
+
+        #Agents
+        self.thief_pos = np.array([7,0])
+        self.material_thief = create_thief(self.thief_pos, pos_height=-3.5, Mass=1)
+        self.sensor_thief = create_thief(self.thief_pos)
+
+        # Create below structure for material thief
+        create_floor(pos_height=-4.2)
+        create_structure(self.grid, pos_height=-3)
+
+        # Create above structure for sensor thief
         create_floor()
-        self.grid = create_structure(self.grid)     # walls = 1
-        self.grid = set_watched_tiles(self.grid)    # watched = 2
+        self.types, self.grid = create_structure(self.grid, self.types)     # walls = 1
+        self.cameras = create_cameras(self.sensor_thief, self.types)    # watched = 2
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
+        p.setCollisionFilterPair(self.object_body, self.sensor_thief, -1, -1, enableCollision=1)
+
+        self.types[self.object_body] = 3
+        self.types[-1] = 0
+        self.types[1] = 0
         self.goal = np.array([self.object_pos[0], self.object_pos[1]], dtype=np.int32) # Knows position of object
         self.exits = np.array([[7, 0],[6, 0],[8, 0]], dtype=np.int32) # Knows position of exits
 
@@ -73,7 +90,7 @@ class ThiefEnv(gym.Env):
             p.resetDebugVisualizerCamera(
                 cameraDistance=15, 
                 cameraYaw=0, 
-                cameraPitch=-60, 
+                cameraPitch=-89, 
                 cameraTargetPosition=[7, 7, 0])
 
         # Load the world
@@ -81,14 +98,11 @@ class ThiefEnv(gym.Env):
         self._load_world()
 
         # Thief's position and initial obs
-        self.thief_pos = np.array([7,0])
-        self.thief_body = create_thief(self.thief_pos)
-        obs = {"grid":self._get_observation(),
+        obs = {"ray_view":self._get_observation(),
                "goal": self.goal,
                "exits" : self.exits,
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
-        
         return obs, {}
 
     def take_object(self):
@@ -114,43 +128,62 @@ class ThiefEnv(gym.Env):
         return -dist
 
     def step(self, action):
-        if action < 4: #walking actions
-            move = self.actions[action]
-            target = self.thief_pos + move
+        #Update environment
+        rotate_cameras(self.cameras, angle=0.05)
 
-            # Check collision with walls : if yes can't move
-            if self.grid[target[0], target[1]] == 1 or target[0]<0  or target[1]<0:
-                reward = self.calculate_reward()
-                reward -= 0.5
-            else:
-                self.thief_pos = target
-                p.resetBasePositionAndOrientation(self.thief_body,
-                        [self.thief_pos[0], self.thief_pos[1], 0.5],
-                        [0,0,0,1])
-                reward = self.calculate_reward()
-        else : #Take object
-            reward = self.calculate_reward()
-            reward += self.take_object()
-            
-        # Check camera watched tile
-        if self.grid[self.thief_pos[0], self.thief_pos[1]] == 2:
-            reward -= 0.1  
-            self.alert_flag +=1
-        else : 
-            self.alert_flag = 0
+        # Continuous controls
+        action = np.clip(action, self.action_space.low, self.action_space.high)
+        turn = float(action[0])  # e.g. -1 = full left, 1 = full right
+        forward = float(action[1])  # e.g. -1 = full backward, 1 = full forward
+
+        move_thief(self.material_thief, self.sensor_thief, turn, forward)
+        p.stepSimulation()
+
         
+        pos, orn = p.getBasePositionAndOrientation(self.material_thief)
+        pos_ghost=(pos[0],pos[1], 0.5)
+        roll, pitch, yaw = p.getEulerFromQuaternion(orn)
+        new_orn = p.getQuaternionFromEuler([0.0, 0.0, yaw])
+        p.resetBasePositionAndOrientation(
+            self.sensor_thief,
+            pos_ghost,  # keep at same position
+            new_orn)
+
+        
+        position, _ = p.getBasePositionAndOrientation(self.material_thief)
+        x = position[0]
+        y = position[1]
+        self.thief_pos = np.array([x,y])
+        reward = self.calculate_reward()
+
+        if get_contact_cameras(self.sensor_thief, self.cameras) :
+            reward -= 0.1
+            self.alert_flag +=1
+        else :
+            self.alert_flag = 0
+
+        print(get_contact_object(self.sensor_thief, self.object_body))
+        if get_contact_object(self.sensor_thief, self.object_body):
+            self.has_object = 1
+            p.removeBody(self.object_body)
+            self.exit_ids = set_exit_tiles(height=0.1)
+            for e in self.exit_ids :
+                self.types[e] = 3
+                p.setCollisionFilterPair(e, self.sensor_thief, -1, -1, enableCollision=1)
+            reward +=10
+
         terminated = False
         truncated = False
 
-        if self.alert_flag >2 : 
+        if self.alert_flag >4 : 
             terminated = True
             reward = -50
 
-        if self.has_object==1 and np.any(np.all(self.exits == self.thief_pos, axis=1)):
+        if self.has_object == 1 and get_contact_exits(self.sensor_thief, self.exit_ids) :
             terminated= True
             reward = 50
 
-        obs = {"grid":self._get_observation(),
+        obs = {"ray_view":self._get_observation(),
                "goal": self.goal,
                "exits" : self.exits,
                "has_object": self.has_object,
@@ -158,18 +191,18 @@ class ThiefEnv(gym.Env):
         return obs, reward, terminated, truncated, {}
 
     def _get_observation(self):
-        x, y = self.thief_pos
-        obs_grid = np.zeros((3,3), dtype=np.int8)
-
-        for dx in range(-1,2):
-            for dy in range(-1,2):
-                xx = x+dx
-                yy = y+dy
-                if 0 <= xx < 15 and 0 <= yy < 15:
-                    obs_grid[dx+1, dy+1] = self.grid[xx,yy]
-                else:
-                    obs_grid[dx+1, dy+1] = 1  # treat out of bounds as walls
-        return obs_grid
+        debug=False
+        if self.render_mode =="human" : 
+            debug = True
+        ray_results = raycast_view_cone(self.sensor_thief, fov=np.pi/2, num_rays=11, max_distance=5.0, height=0.05, debug=debug)
+        l= []
+        for r in ray_results : 
+            id = r[0]
+            type = self.types[id]/3
+            distance_ratio = r[2]
+            l.append(type)
+            l.append(distance_ratio)
+        return l
     
     def render(self):
         pass
@@ -178,41 +211,50 @@ class ThiefEnv(gym.Env):
         if self._physics_client:
             p.disconnect(self._physics_client)
 
-
-
-
-env = ThiefEnv(render_mode="human")
+"""
+env = ThiefEnv_cont(render_mode="human")
 obs, info = env.reset()
 print (env.grid)
-"""
-for i in range(200):
-    action = env.action_space.sample()
+
+
+for i in range(500):
+    #action = env.action_space.sample()
+    action = (0,1)
     print (action)
     obs, reward, terminated, truncated, info = env.step(action)
-    print (obs)
-    time.sleep(2)
+    print (reward)
+    time.sleep(1)
     if terminated or truncated:
         print ("terminated")
         env.reset()
-"""
-for i in range(200):
-    # Pedir acción al usuario
-    try:
-        action = int(input("Introduce acción (0: up, 1: down, 2: left, 3: right, 4: stay/take): "))
-    except ValueError:
-        print("Entrada no válida, usando acción 4 por defecto")
-        action = 4
 
-    # Asegurarse que la acción está dentro del rango permitido
-    if action not in range(env.action_space.n):
-        print(f"Acción fuera de rango, usando acción 4 por defecto")
-        action = 4
+while True:
+    user_input = input("Action (turn forward): ")
+
+    if user_input.lower() == "q":
+        print("Exiting.")
+        break
+
+    try:
+        turn, forward = map(float, user_input.split())
+    except ValueError:
+        print("❌ Invalid input. Enter two numbers like: 0.2 -0.5")
+        continue
+
+    # Clip for safety
+    action = np.clip(
+        np.array([turn, forward], dtype=np.float32),
+        env.action_space.low,
+        env.action_space.high
+    )
 
     obs, reward, terminated, truncated, info = env.step(action)
-    print("Observación:", obs)
-    print("Recompensa:", reward)
+
+    print(f"Reward: {reward:.3f}")
+    print(f"Position: {env.thief_pos}")
+    print(f"Has object: {env.has_object}, Alert: {env.alert_flag}")
 
     if terminated or truncated:
-        print("Terminado")
+        print("Episode ended. Resetting...\n")
         obs, info = env.reset()
-
+"""
