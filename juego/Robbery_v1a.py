@@ -52,9 +52,9 @@ class ThiefEnv_V1a(gym.Env):
         self.grid.fill(0)  # 0 = empty
         create_floor()
         self.grid = create_structure(self.grid)     # walls = 1
-        print(f"before cameras: {self.grid}")
+        #print(f"before cameras: {self.grid}")
         self.grid = set_watched_tiles(self.grid)    # watched = 2
-        print(f"after cameras: {self.grid}")
+        #print(f"after cameras: {self.grid}")
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
         self.goal = np.array([self.object_pos[0], self.object_pos[1]], dtype=np.int32) # Knows position of object
         self.exits = np.array([[7, 0],[6, 0],[8, 0]], dtype=np.int32) # Knows position of exits
@@ -67,7 +67,7 @@ class ThiefEnv_V1a(gym.Env):
         self._physics_client = p.connect(p.GUI if self.render_mode=="human" else p.DIRECT)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
-        if self.render_mode == "human":
+        if self.render_mode == None:
             p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
             p.resetDebugVisualizerCamera(
                 cameraDistance=15, 
@@ -82,6 +82,8 @@ class ThiefEnv_V1a(gym.Env):
         # Thief's position and initial obs
         self.thief_pos = np.array([7,0])
         self.thief_body = create_thief(self.thief_pos)
+        self.has_object = 0
+        self.alert_flag = 0
         obs = {"grid":self._get_observation(),
                "goal": self.goal,
                "exits" : self.exits,
@@ -134,10 +136,11 @@ class ThiefEnv_V1a(gym.Env):
                 reward += r
             
         # Check camera watched tile
+        #Intentar que no salga del rango
         if self.grid[self.thief_pos[0], self.thief_pos[1]] == 2:
-            reward -= 0.1  
-            self.alert_flag +=1
-        else : 
+            reward -= 0.1
+            self.alert_flag = min(self.alert_flag + 1, 3)
+        else:
             self.alert_flag = 0
 
         if self.alert_flag >2 : 
