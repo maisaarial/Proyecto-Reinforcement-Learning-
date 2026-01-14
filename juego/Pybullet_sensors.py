@@ -6,7 +6,7 @@ import time
 import math
 from Pybullet_edificio import create_structure, create_floor, create_thief, create_object, set_exit_tiles
 
-def create_cameras(sensor_thief, types):
+def create_cameras(sensor_bodies:list, types):
     #Defining Cameras
     triangle1_col = p.createCollisionShape(shapeType=p.GEOM_MESH, fileName="/juego/mesh/triangle1.obj", meshScale=[1, 1, 1])
     triangle1_vis = p.createVisualShape(shapeType=p.GEOM_MESH, fileName="/juego/mesh/triangle1.obj", meshScale=[1, 1, 1], rgbaColor=[1, 0, 0, 1])
@@ -35,7 +35,8 @@ def create_cameras(sensor_thief, types):
                                     basePosition=cam["position"], baseOrientation=cam["orientation"])
         built_cams[new_cam] = cam["rotation"]
         types[new_cam] = 2
-        p.setCollisionFilterPair(new_cam, sensor_thief, -1, -1, enableCollision=1)
+        for body in sensor_bodies :
+            p.setCollisionFilterPair(new_cam, body, -1, -1, enableCollision=1)
     return built_cams
 
 def rotate_cameras(cameras, angle):
@@ -230,7 +231,7 @@ structure = create_structure(grid, pos_height=-3)
 
 # Turn on gravity (Earth-like)
 p.setGravity(0, 0, -9.8)
-cameras = create_cameras(sensor_thief=sensor_thief, types=types)
+cameras = create_cameras([sensor_thief], types=types)
 print(types)
 while True:
 
@@ -239,7 +240,7 @@ while True:
     b=random.random()*2 - 1
     move_thief(material_thief, sensor_thief,0, 1 )
 
-    ray_results = raycast_view_cone(sensor_thief,fov=np.pi / 2,num_rays=11,max_distance=5.0,height=0.05,debug=True)
+    ray_results = raycast_view_cone(sensor_thief,fov=2*np.pi,num_rays=20,max_distance=3.0,height=0.05,debug=True)
     l= []
     for r in ray_results : 
         id = r[0]
@@ -248,5 +249,13 @@ while True:
 
     get_contact_cameras(sensor_thief, cameras)
     p.stepSimulation()
+    pos, orn = p.getBasePositionAndOrientation(material_thief)
+    pos_ghost=(pos[0],pos[1], 0.5)
+    roll, pitch, yaw = p.getEulerFromQuaternion(orn)
+    new_orn = p.getQuaternionFromEuler([0.0, 0.0, yaw])
+    p.resetBasePositionAndOrientation(
+        sensor_thief,
+        pos_ghost,  # keep at same position
+        new_orn)
     time.sleep(0.01)
 """

@@ -34,8 +34,8 @@ class ThiefEnv_V1b(gym.Env):
         
         # Observation : discrete
         self.observation_space = spaces.Dict({
+            "goal_vector":spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32),
             "grid": spaces.Box(low=0, high=3, shape=(3, 3), dtype=np.int8), # 3x3 grid around thief (integers 0–3)
-            "goal": spaces.Box(low=0, high=15, shape=(2,), dtype=np.int32),
             "has_object": spaces.Discrete(2),
             "alert_flag": spaces.Discrete(4), # e.g. binary variable
         })
@@ -83,12 +83,11 @@ class ThiefEnv_V1b(gym.Env):
         # Thief's position and initial obs
         self.thief_pos = np.array([7,0])
         self.thief_body = create_thief(self.thief_pos)
-        obs = {"grid":self._get_observation(),
-               "goal": self.goal,
-               "exits" : self.exits,
+        self.goal_vector = (self.goal - self.thief_pos)/14
+        obs = {"goal_vector": self.goal_vector,
+               "grid":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
-        
         return obs, {}
 
     def take_object(self):
@@ -140,6 +139,7 @@ class ThiefEnv_V1b(gym.Env):
         if self.grid[self.thief_pos[0], self.thief_pos[1]] == 2:
             reward -= 0.1  
             self.alert_flag +=1
+            self.alert_flag =  min(self.alert_flag, 3)
         else : 
             self.alert_flag = 0
 
@@ -147,9 +147,9 @@ class ThiefEnv_V1b(gym.Env):
             terminated = True
             reward = -50            
 
-        obs = {"grid":self._get_observation(),
-               "goal": self.goal,
-               "exits" : self.exits,
+        self.goal_vector = (self.goal - self.thief_pos)/14
+        obs = {"goal_vector": self.goal_vector,
+               "grid":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         return obs, reward, terminated, truncated, {}

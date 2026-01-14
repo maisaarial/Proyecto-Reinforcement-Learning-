@@ -31,9 +31,8 @@ class ThiefEnv_cont(gym.Env):
         
         # Observation : discrete
         self.observation_space = spaces.Dict({
+            "goal_vector":spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32),
             "ray_view": spaces.Box(low=0.0,high=1.0,shape=(22,),dtype=np.float32),
-            "goal": spaces.Box(low=0, high=15, shape=(2,), dtype=np.int32),
-            "exits": spaces.Box(low=0, high=15, shape=(3,2), dtype=np.int32),
             "has_object": spaces.Discrete(2),
             "alert_flag": spaces.Discrete(6), # e.g. binary variable
         })
@@ -67,7 +66,7 @@ class ThiefEnv_cont(gym.Env):
         # Create above structure for sensor thief
         create_floor()
         self.types, self.grid = create_structure(self.grid, self.types)     # walls = 1
-        self.cameras = create_cameras(self.sensor_thief, self.types)    # watched = 2
+        self.cameras = create_cameras([self.sensor_thief], self.types)    # watched = 2
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
         p.setCollisionFilterPair(self.object_body, self.sensor_thief, -1, -1, enableCollision=1)
 
@@ -98,23 +97,11 @@ class ThiefEnv_cont(gym.Env):
         self._load_world()
 
         # Thief's position and initial obs
-        obs = {"ray_view":self._get_observation(),
-               "goal": self.goal,
-               "exits" : self.exits,
+        obs = {"goal_vector":self.calculate_goal_vector(),
+               "ray_view":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         return obs, {}
-
-    def take_object(self):
-        r = 0
-        if self.thief_pos[0] == self.object_pos[0] and self.thief_pos[1] == self.object_pos[1] and self.has_object == 0: 
-            self.has_object = 1
-            p.removeBody(self.object_body)
-            self.object_body = None
-            if self.render_mode=="human":
-                set_exit_tiles()
-            r +=10
-        return r
     
     def distance (self, object):
         dist = np.linalg.norm(self.thief_pos - object)/10
@@ -127,6 +114,14 @@ class ThiefEnv_cont(gym.Env):
             dist = min(self.distance(self.exits[0]),self.distance(self.exits[1]),self.distance(self.exits[2]))
         return -dist
 
+    def calculate_goal_vector(self):
+        if self.has_object == 0:
+            vector = (self.goal - self.thief_pos)/14
+        else :
+            min_index = np.argmin([self.distance(self.exits[0]),self.distance(self.exits[1]),self.distance(self.exits[2])])
+            vector = (self.exits[min_index] - self.thief_pos)/14
+        return vector
+    
     def step(self, action):
         #Update environment
         rotate_cameras(self.cameras, angle=0.05)
@@ -159,6 +154,7 @@ class ThiefEnv_cont(gym.Env):
         if get_contact_cameras(self.sensor_thief, self.cameras) :
             reward -= 0.1
             self.alert_flag +=1
+            self.alert_flag = min(self.alert_flag, 5)
         else :
             self.alert_flag = 0
 
@@ -183,9 +179,9 @@ class ThiefEnv_cont(gym.Env):
             terminated= True
             reward = 50
 
-        obs = {"ray_view":self._get_observation(),
-               "goal": self.goal,
-               "exits" : self.exits,
+        self.goal_vector = self.calculate_goal_vector()
+        obs = {"goal_vector":self.calculate_goal_vector(),
+               "ray_view":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         return obs, reward, terminated, truncated, {}
@@ -211,11 +207,11 @@ class ThiefEnv_cont(gym.Env):
         if self._physics_client:
             p.disconnect(self._physics_client)
 
+
 """
 env = ThiefEnv_cont(render_mode="human")
 obs, info = env.reset()
 print (env.grid)
-
 
 for i in range(500):
     #action = env.action_space.sample()
@@ -251,7 +247,7 @@ while True:
     obs, reward, terminated, truncated, info = env.step(action)
 
     print(f"Reward: {reward:.3f}")
-    print(f"Position: {env.thief_pos}")
+    print(f"Position: {env.goal_vector}")
     print(f"Has object: {env.has_object}, Alert: {env.alert_flag}")
 
     if terminated or truncated:

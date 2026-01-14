@@ -34,9 +34,8 @@ class ThiefEnv_V1c(gym.Env):
         
         # Observation : discrete
         self.observation_space = spaces.Dict({
+            "goal_vector":spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32),
             "grid": spaces.Box(low=0, high=3, shape=(3, 3), dtype=np.int8), # 3x3 grid around thief (integers 0–3)
-            "goal": spaces.Box(low=0, high=15, shape=(2,), dtype=np.int32),
-            "exits": spaces.Box(low=0, high=15, shape=(3,2), dtype=np.int32),
             "has_object": spaces.Discrete(2),
             "alert_flag": spaces.Discrete(4), # e.g. binary variable
         })
@@ -85,9 +84,8 @@ class ThiefEnv_V1c(gym.Env):
         # Thief's position and initial obs
         self.thief_pos = np.array([7,0])
         self.thief_body = create_thief(self.thief_pos)
-        obs = {"grid":self._get_observation(),
-               "goal": self.goal,
-               "exits" : self.exits,
+        obs = {"goal_vector":self.calculate_goal_vector(),
+                "grid":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         
@@ -114,6 +112,14 @@ class ThiefEnv_V1c(gym.Env):
         else :
             dist = min(self.distance(self.exits[0]),self.distance(self.exits[1]),self.distance(self.exits[2]))
         return -dist
+    
+    def calculate_goal_vector(self):
+        if self.has_object == 0:
+            vector = (self.goal - self.thief_pos)/14
+        else :
+            min_index = np.argmin([self.distance(self.exits[0]),self.distance(self.exits[1]),self.distance(self.exits[2])])
+            vector = (self.exits[min_index] - self.thief_pos)/14
+        return vector
 
     def step(self, action):
         if action < 4: #walking actions
@@ -138,6 +144,7 @@ class ThiefEnv_V1c(gym.Env):
         if self.grid[self.thief_pos[0], self.thief_pos[1]] == 2:
             reward -= 0.1  
             self.alert_flag +=1
+            self.alert_flag =  min(self.alert_flag, 3)
         else : 
             self.alert_flag = 0
         
@@ -152,9 +159,8 @@ class ThiefEnv_V1c(gym.Env):
             terminated= True
             reward = 50
 
-        obs = {"grid":self._get_observation(),
-               "goal": self.goal,
-               "exits" : self.exits,
+        obs = {"goal_vector":self.calculate_goal_vector(),
+                "grid":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         return obs, reward, terminated, truncated, {}
@@ -181,11 +187,11 @@ class ThiefEnv_V1c(gym.Env):
             p.disconnect(self._physics_client)
 
 
+
 """
 env = ThiefEnv_V1c(render_mode="human")
 obs, info = env.reset()
 print (env.grid)
-
 
 for i in range(200):
     action = env.action_space.sample()
