@@ -121,7 +121,7 @@ def get_contact_exits(sensor_thief, exits):
             contact=True
     return contact
 
-def move_thief(material_thief, sensor_thief, rotation, velocity):
+def move_agent(material_thief, rotation, velocity):
     """
     rotation: float in [-1, 1] → relative yaw offset [-75°, +75°]
     force:    float in [-1, 1] → forward/backward thrust
@@ -238,7 +238,7 @@ while True:
     rotate_cameras(cameras=cameras, angle=0.05)
     a=random.random()*2 - 1
     b=random.random()*2 - 1
-    move_thief(material_thief, sensor_thief,0, 1 )
+    move_agent(material_thief,0, 1 )
 
     ray_results = raycast_view_cone(sensor_thief,fov=2*np.pi,num_rays=20,max_distance=3.0,height=0.05,debug=True)
     l= []
