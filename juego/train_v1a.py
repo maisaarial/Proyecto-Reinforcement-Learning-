@@ -145,19 +145,19 @@ def main():
     # -------------------------
     SEED = 42
     N_ENVS = 1
-    TOTAL_TIMESTEPS = 100_000
+    TOTAL_TIMESTEPS = 500_000
 
     # -------------------------
     # 2) Hiperparámetros PPO (los usaremos en el nombre del run)
     # -------------------------
-    LR = 3e-4
-    GAMMA = 0.99
-    N_STEPS = 1024
-    BATCH_SIZE = 256
-    N_EPOCHS = 10
-    ENT_COEF = 0.01
-    GAE_LAMBDA = 0.95
-    CLIP_RANGE = 0.2
+    LR = 3e-4 #learning rate
+    GAMMA = 0.99 #cuant piensa en el futuro
+    N_STEPS = 1024 #rollout length, cuanta experiencia recoge
+    BATCH_SIZE = 512 #cuanto usa en cada update
+    N_EPOCHS = 10 #cuantas veces se reutiliza el mismo rollout
+    ENT_COEF = 0.005 #coeficiente de entropia
+    GAE_LAMBDA = 0.95 #como se estiman las ventajas
+    CLIP_RANGE = 0.2 #cuanto se permite que cambie la politica en un update 
 
     # -------------------------
     # 3) Nombre del experimento: timestamp + hparams (sin env ni seed)
@@ -243,12 +243,13 @@ def main():
         progress_bar=False,
         tb_log_name="PPO"  # aparece como subcarpeta dentro de tb/
     )
-'''
+    '''
     model.learn(
         total_timesteps=TOTAL_TIMESTEPS,
         progress_bar=False,
         tb_log_name="PPO"  # aparece como subcarpeta dentro de tb/
     )
+    
     # -------------------------
     # 8) Guardar modelo final
     # -------------------------
