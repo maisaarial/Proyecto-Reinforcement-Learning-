@@ -155,6 +155,27 @@ class SimpleEnv(MiniGridEnv):
 
 
     def step(self, action):
+        # --- OUT OF BOUNDS GUARD ---
+        fwd_pos = self.front_pos
+        x, y = fwd_pos
+
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            # Treat as invalid move: no-op with penalty
+            obs = self.gen_obs()
+            reward = -0.1
+            terminated = False
+            truncated = False
+            info = {"invalid_move": True}
+
+            # Extend observation
+            obs = dict(obs)
+            obs["in_camera"] = self.in_camera
+            obs["turns_in_camera"] = self.turns_in_camera
+            obs["phases"] = self.phases
+
+            return obs, reward, terminated, truncated, info
+
+        # --- NORMAL MINIGRID STEP ---
         obs, reward, terminated, truncated, info = super().step(action)
 
         reward -= 0.01
@@ -166,7 +187,7 @@ class SimpleEnv(MiniGridEnv):
         if in_cam:
             self.turns_in_camera += 1
             if self.turns_in_camera >= 3:
-                reward -=1
+                reward -= 1
                 terminated = True
         else:
             self.turns_in_camera = 0
@@ -180,20 +201,15 @@ class SimpleEnv(MiniGridEnv):
 
         if self.phases == 0:
             if tuple(self.agent_pos) == tuple(self.goal_pos):
-                #move goal to exit
                 self.grid.set(self.goal_pos[0], self.goal_pos[1], None)
                 self.put_obj(Goal(), 6, 14)
                 self.put_obj(Goal(), 7, 14)
                 self.put_obj(Goal(), 8, 14)
-                #don't end episode
-                terminated = False
 
-                #update variable
+                terminated = False
                 self.mission = "get out !"
                 self.phases = 1
                 obs["phases"] = self.phases
-
-
 
         return obs, reward, terminated, truncated, info
 

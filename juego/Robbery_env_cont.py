@@ -50,6 +50,8 @@ class ThiefEnv_cont(gym.Env):
         self.grid = np.zeros((15,15), dtype=np.int8) # Store world layout (walls, watched tiles, etc.)
         self.types = {}
         self.cameras = None
+        self.max_steps = 1000
+        self.step_count = 0
 
         
     
@@ -80,24 +82,40 @@ class ThiefEnv_cont(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        #Connection to PyBullet
-        if self._physics_client is not None:
-            p.disconnect(self._physics_client)
-        self._physics_client = p.connect(p.GUI if self.render_mode=="human" else p.DIRECT)
-        p.setAdditionalSearchPath(pybullet_data.getDataPath())
+
+        # --- PyBullet clean reset ---
+        if self._physics_client is None:
+            self._physics_client = p.connect(
+                p.GUI if self.render_mode == "human" else p.DIRECT
+            )
+            p.setAdditionalSearchPath(pybullet_data.getDataPath())
+        else:
+            p.resetSimulation()
+
+        p.setGravity(0, 0, -9.8)
 
         if self.render_mode == "human":
             p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
             p.resetDebugVisualizerCamera(
-                cameraDistance=15, 
-                cameraYaw=0, 
-                cameraPitch=-89, 
-                cameraTargetPosition=[7, 7, 0])
+                cameraDistance=15,
+                cameraYaw=0,
+                cameraPitch=-89,
+                cameraTargetPosition=[7, 7, 0]
+            )
 
-        # Load the world
-        p.setGravity(0,0,-9.8)
+        # --- RESET LOGICAL STATE (CRÍTICO) ---
+        self.has_object = 0
+        self.alert_flag = 0
+        self.step_count = 0
+        self.object_body = None
+        self.exit_ids = []
+        self.types = {}
+        self.cameras = []
+
+        # --- Reload world ---
         self._load_world()
         self.current_steps = 0
+
 
         # Thief's position and initial obs
         obs = {"goal_vector":self.calculate_goal_vector(),
@@ -105,6 +123,7 @@ class ThiefEnv_cont(gym.Env):
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         return obs, {}
+
     
     def distance (self, object):
         dist = np.linalg.norm(self.thief_pos - object)/10
@@ -127,7 +146,8 @@ class ThiefEnv_cont(gym.Env):
     
     def step(self, action):
         #Update environment
-        rotate_cameras(self.cameras, angle=0.05)
+        if self.cameras is not None :
+            rotate_cameras(self.cameras, angle=0.05)
 
         # Continuous controls
         action = np.clip(action, self.action_space.low, self.action_space.high)
@@ -183,7 +203,10 @@ class ThiefEnv_cont(gym.Env):
             terminated= True
             reward = 50
 
-        self.goal_vector = self.calculate_goal_vector()
+
+        self.step_count +=1
+        if self.step_count >= self.max_steps :
+            truncated = True
         obs = {"goal_vector":self.calculate_goal_vector(),
                "ray_view":self._get_observation(),
                "has_object": self.has_object,
@@ -198,7 +221,7 @@ class ThiefEnv_cont(gym.Env):
         l= []
         for r in ray_results : 
             id = r[0]
-            type = self.types[id]/3
+            type = self.types.get(id, 0) / 3
             distance_ratio = r[2]
             l.append(type)
             l.append(distance_ratio)
