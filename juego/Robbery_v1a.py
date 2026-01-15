@@ -10,13 +10,13 @@ from Pybullet_edificio import create_structure, create_floor, set_watched_tiles,
 """
 V1 : 
 Espacio discreto
-5 acciones (left, right, up, down, take)
-recompensas : fijas (+ al tomar objeto y salir  - al perder o mover en una pared) + dinamica al acercarse del objetivo
+4 acciones (left, right, up, down)
+recompensas : fijas (+ al encontrar objeto  - al perder o mover en una pared) + dinamica al acercarse del objetivo
 zonas de camaras : cuadradas y seleccionada al azar entre 6
 """
 
-class ThiefEnv_V1c(gym.Env):
-    metadata = {"render_modes": ["human"]}
+class ThiefEnv_V1a(gym.Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
     def __init__(self, render_mode=None):
         super().__init__()
@@ -30,7 +30,7 @@ class ThiefEnv_V1c(gym.Env):
             1: (0,-1),
             2: (-1,0),
             3: (1,0),
-            4: None}
+            4:None} #para unificar las tres etapas, aunque no se utlice tienen que haber 5 actions
         
         # Observation : discrete
         self.observation_space = spaces.Dict({
@@ -41,7 +41,6 @@ class ThiefEnv_V1c(gym.Env):
         })
         self.grid = np.zeros((3,3), dtype=np.int8)
         self.goal = np.zeros((1,1), dtype=np.int8)
-        self.exits = np.zeros((1,3), dtype=np.int8)
         self.has_object = 0
         self.alert_flag = 0
 
@@ -59,7 +58,7 @@ class ThiefEnv_V1c(gym.Env):
         #print(f"after cameras: {self.grid}")
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
         self.goal = np.array([self.object_pos[0], self.object_pos[1]], dtype=np.int32) # Knows position of object
-        self.exits = np.array([[7, 0],[6, 0],[8, 0]], dtype=np.int32) # Knows position of exits
+        self.exits = np.array([[7,0],[6,0],[8,0]], dtype=np.int32)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -84,23 +83,27 @@ class ThiefEnv_V1c(gym.Env):
         # Thief's position and initial obs
         self.thief_pos = np.array([7,0])
         self.thief_body = create_thief(self.thief_pos)
-        obs = {"goal_vector":self.calculate_goal_vector(),
-                "grid":self._get_observation(),
+        self.has_object = 0
+        self.alert_flag = 0
+
+        self.goal_vector = (self.goal - self.thief_pos)/14
+        obs = {"goal_vector": self.goal_vector,
+               "grid":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         
         return obs, {}
 
-    def take_object(self):
+    def check_position(self):
         r = 0
+        terminated = False
         if self.thief_pos[0] == self.object_pos[0] and self.thief_pos[1] == self.object_pos[1] and self.has_object == 0: 
             self.has_object = 1
             p.removeBody(self.object_body)
             self.object_body = None
-            if self.render_mode=="human":
-                set_exit_tiles()
-            r +=10
-        return r
+            r +=50
+            terminated = True
+        return r, terminated
     
     def distance (self, object):
         dist = np.linalg.norm(self.thief_pos - object)/10
@@ -112,16 +115,15 @@ class ThiefEnv_V1c(gym.Env):
         else :
             dist = min(self.distance(self.exits[0]),self.distance(self.exits[1]),self.distance(self.exits[2]))
         return -dist
-    
-    def calculate_goal_vector(self):
-        if self.has_object == 0:
-            vector = (self.goal - self.thief_pos)/14
-        else :
-            min_index = np.argmin([self.distance(self.exits[0]),self.distance(self.exits[1]),self.distance(self.exits[2])])
-            vector = (self.exits[min_index] - self.thief_pos)/14
-        return vector
 
     def step(self, action):
+        terminated = False
+        truncated = False
+        
+        #Inicializar reward 
+        reward = 0.0
+
+        #0-3 mover, 4 noop
         if action < 4: #walking actions
             move = self.actions[action]
             target = self.thief_pos + move
@@ -136,10 +138,22 @@ class ThiefEnv_V1c(gym.Env):
                         [self.thief_pos[0], self.thief_pos[1], 0.5],
                         [0,0,0,1])
                 reward = self.calculate_reward()
-        else : #Take object
-            reward = self.calculate_reward()
-            reward += self.take_object()
-            
+                
+            #si llegó al objeto, termina y DEVUELVE YA (sin penalizaciones extra)
+            if self.thief_pos[0] == self.object_pos[0] and self.thief_pos[1] == self.object_pos[1]:
+                self.has_object = 1
+                if self.object_body is not None:
+                    p.removeBody(self.object_body)
+                    self.object_body = None
+                reward += 50
+                terminated = True
+
+                obs = self._build_obs()
+                return obs, reward, terminated, truncated, {}
+        else: 
+            # acción 4 en v1a: NO-OP
+            reward = self.calculate_reward()   
+
         # Check camera watched tile
         if self.grid[self.thief_pos[0], self.thief_pos[1]] == 2:
             reward -= 0.1  
@@ -147,23 +161,22 @@ class ThiefEnv_V1c(gym.Env):
             self.alert_flag =  min(self.alert_flag, 3)
         else : 
             self.alert_flag = 0
-        
-        terminated = False
-        truncated = False
 
         if self.alert_flag >2 : 
             terminated = True
-            reward = -50
+            reward = -50            
 
-        if self.has_object==1 and np.any(np.all(self.exits == self.thief_pos, axis=1)):
-            terminated= True
-            reward = 50
-
-        obs = {"goal_vector":self.calculate_goal_vector(),
-                "grid":self._get_observation(),
-               "has_object": self.has_object,
-               "alert_flag": self.alert_flag}
+        #self.goal_vector = (self.goal - self.thief_pos)/14
+        obs = self._build_obs()
         return obs, reward, terminated, truncated, {}
+
+    def _build_obs(self):
+        return {
+            "goal_vector": self.goal_vector,
+            "grid": self._get_observation(),
+            "has_object": self.has_object,
+            "alert_flag": self.alert_flag,
+        }
 
     def _get_observation(self):
         x, y = self.thief_pos
@@ -178,20 +191,60 @@ class ThiefEnv_V1c(gym.Env):
                 else:
                     obs_grid[dx+1, dy+1] = 1  # treat out of bounds as walls
         return obs_grid
-    
-    def render(self):
-        pass
 
+    def render(self):
+        if self.render_mode != "rgb_array":
+            return None
+
+        # Asegura que hay un cliente válido
+        if self._physics_client is None:
+            return None
+
+        width, height = 640, 480
+
+        view_matrix = p.computeViewMatrixFromYawPitchRoll(
+            cameraTargetPosition=[7.5, 7.5, 0.0],
+            distance=18,
+            yaw=45,
+            pitch=-60,
+            roll=0,
+            upAxisIndex=2,
+            physicsClientId=self._physics_client,
+        )
+
+        proj_matrix = p.computeProjectionMatrixFOV(
+            fov=60,
+            aspect=width / height,
+            nearVal=0.1,
+            farVal=100.0,
+        )
+
+        # (opcional) un step para actualizar
+        p.stepSimulation(physicsClientId=self._physics_client)
+
+        _, _, px, _, _ = p.getCameraImage(
+            width=width,
+            height=height,
+            viewMatrix=view_matrix,
+            projectionMatrix=proj_matrix,
+            renderer=p.ER_TINY_RENDERER,
+            physicsClientId=self._physics_client,
+        )
+
+        rgba = np.array(px, dtype=np.uint8).reshape(height, width, 4)
+        rgb = rgba[:, :, :3]
+        return rgb
+   
     def close(self):
         if self._physics_client:
             p.disconnect(self._physics_client)
 
-
-
 """
-env = ThiefEnv_V1c(render_mode="human")
+env = ThiefEnv_V1a(render_mode="human")
 obs, info = env.reset()
 print (env.grid)
+
+
 
 for i in range(200):
     action = env.action_space.sample()
