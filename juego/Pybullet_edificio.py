@@ -25,7 +25,7 @@ def create_object(grid, pos_height=0.5):
     # Create a visual shape (this is what you see)
     obj_visual = p.createVisualShape(p.GEOM_CAPSULE, radius = 0.5, rgbaColor=[1, 1, 0, 1])
     # Create a rigid body with both collision and visual shapes
-    grid[position[0],position[1]] = 3
+    grid[position[0],position[1]] = 3 #Guard position
     obj_body = p.createMultiBody(baseMass=0,
                                 baseCollisionShapeIndex=obj_collision,
                                 baseVisualShapeIndex=obj_visual,
@@ -108,6 +108,7 @@ def create_structure(grid, types=None, pos_height=1):
     grid[9,11] = 1
 
     if types is not None :
+        # Stock types of bodies for raycasting id
         for w in walls :
             types[w] = 1
         for p in pillars :
@@ -117,6 +118,7 @@ def create_structure(grid, types=None, pos_height=1):
     return grid
 
 def set_watched_tiles(grid):
+    #Definition of fixed and squared camera zones.
     possible_cameras = [[(4,1),(4,2),(4,4),
                 (5,1),
                 (6,1),(6,2),(6,4),
@@ -166,37 +168,3 @@ def set_exit_tiles(height=-0.45):
         )
         ids.append(body)
     return ids
-
-
-"""
-# Connect to GUI
-p.connect(p.GUI)
-p.setAdditionalSearchPath(pybullet_data.getDataPath())
-p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
-
-p.resetDebugVisualizerCamera(
-    cameraDistance=15, 
-    cameraYaw=0, 
-    cameraPitch=-60, 
-    cameraTargetPosition=[7, 7, 0])
-
-
-grid = np.zeros((15,15), dtype=np.int8)
-thief_pos = np.array([7,0])
-thief = create_thief(thief_pos)
-floor = create_floor()
-# plane_id = p.loadURDF("plane.urdf",basePosition=[7.5, 7.5, -0.5],useFixedBase=True)
-structure = create_structure(grid)
-create_object(grid)
-# set_watched_tiles()
-
-
-# Turn on gravity (Earth-like)
-p.setGravity(0, 0, -9.8)
-
-
-while True:
-
-    p.stepSimulation()
-    time.sleep(0.1)
-"""

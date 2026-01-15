@@ -3,8 +3,6 @@ from gymnasium import spaces
 import numpy as np
 import pybullet as p
 import pybullet_data
-import time
-import random
 from Pybullet_edificio import create_structure, create_floor, create_thief, create_object, set_exit_tiles
 from Pybullet_sensors import *
 """
@@ -15,7 +13,7 @@ recompensas : fijas (+ al encontrar objeto y salir  - al perder) + dinamica al a
 zonas de camaras : circulares y rotativas 4 seleccionadas al azar entre 8
 """
 
-class ThiefEnv_cont(gym.Env):
+class ThiefEnv_complete(gym.Env):
     metadata = {"render_modes": ["human"]}
 
     def __init__(self, max_steps=1000, render_mode=None):
@@ -33,7 +31,9 @@ class ThiefEnv_cont(gym.Env):
         
         # Observation : discrete
         self.observation_space = spaces.Dict({
-            "goal_vector":spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32),
+            "goal_dist":spaces.Box(low=0, high=2.2, shape=(1,), dtype=np.float32),
+            "agent_yaw": spaces.Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32),
+            "to_goal_yaw": spaces.Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32),
             "ray_view": spaces.Box(low=0.0,high=1.0,shape=(22,),dtype=np.float32),
             "has_object": spaces.Discrete(2),
             "alert_flag": spaces.Discrete(6), # e.g. binary variable
@@ -68,9 +68,15 @@ class ThiefEnv_cont(gym.Env):
         # Create above structure for sensor thief
         create_floor()
         self.types, self.grid = create_structure(self.grid, self.types)     # walls = 1
-        self.cameras = create_cameras([self.sensor_thief], self.types)    # watched = 2
+        self.cameras = create_cameras([self.sensor_thief], self.types, nbr=4)    # watched = 2
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
         p.setCollisionFilterPair(self.object_body, self.sensor_thief, -1, -1, enableCollision=1)
+
+        self.blocks = []
+        for key, values in self.types.items():
+            if values == 1 : 
+                p.setCollisionFilterPair(key, self.sensor_thief, -1, -1, enableCollision=1)
+                self.blocks.append(key)
 
         self.types[self.object_body] = 3
         self.types[-1] = 0
@@ -98,24 +104,39 @@ class ThiefEnv_cont(gym.Env):
         p.setGravity(0,0,-9.8)
         self._load_world()
         self.current_steps = 0
+        pos, orn = p.getBasePositionAndOrientation(self.material_thief)
+        roll, pitch, yaw = p.getEulerFromQuaternion(orn)
+        self.yaw= yaw
 
         # Thief's position and initial obs
-        obs = {"goal_vector":self.calculate_goal_vector(),
+        self.goal_vector = self.calculate_goal_vector()
+        goal_angle = np.arctan2(self.goal_vector[1], self.goal_vector[0])
+        self.to_goal_yaw = goal_angle - self.yaw
+        self.to_goal_yaw = ((self.to_goal_yaw + np.pi) % (2 * np.pi) - 3*np.pi/2)
+
+        obs = {"goal_dist":np.array([self.distance(self.goal)], dtype=np.float32),
+               "agent_yaw":np.array([self.yaw], dtype=np.float32),
+               "to_goal_yaw":np.array([self.to_goal_yaw], dtype=np.float32),
                "ray_view":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         return obs, {}
     
     def distance (self, object):
-        dist = np.linalg.norm(self.thief_pos - object)/10
+        dist = np.linalg.norm(self.thief_pos - object)/2
         return dist
     
     def calculate_reward(self):
+        alpha = 1
         if self.has_object==0:
             dist = self.distance(self.goal)
         else :
             dist = min(self.distance(self.exits[0]),self.distance(self.exits[1]),self.distance(self.exits[2]))
-        return -dist
+        heading_reward = np.cos(self.to_goal_yaw)
+        delta = self.prev_dist - dist
+        if dist < 0.2 :
+            alpha = 0
+        return 10*delta + 2.0 * alpha * heading_reward
 
     def calculate_goal_vector(self):
         if self.has_object == 0:
@@ -130,6 +151,7 @@ class ThiefEnv_cont(gym.Env):
         rotate_cameras(self.cameras, angle=0.05)
 
         # Continuous controls
+        self.prev_dist = self.distance(self.goal)
         action = np.clip(action, self.action_space.low, self.action_space.high)
         turn = float(action[0])  # e.g. -1 = full left, 1 = full right
         forward = float(action[1])  # e.g. -1 = full backward, 1 = full forward
@@ -151,6 +173,9 @@ class ThiefEnv_cont(gym.Env):
         y = pos[1]
         self.thief_pos = np.array([x,y])
         reward = self.calculate_reward()
+        if get_contact_walls(self.sensor_thief, self.blocks):
+            reward -=0.2   
+        reward -= 0.005 * self.current_steps
 
         if get_contact_cameras(self.sensor_thief, self.cameras) :
             reward -= 0.1
@@ -184,7 +209,13 @@ class ThiefEnv_cont(gym.Env):
             reward = 50
 
         self.goal_vector = self.calculate_goal_vector()
-        obs = {"goal_vector":self.calculate_goal_vector(),
+        goal_angle = np.arctan2(self.goal_vector[1], self.goal_vector[0])
+        self.to_goal_yaw = goal_angle - self.yaw
+        self.to_goal_yaw = ((self.to_goal_yaw + np.pi) % (2 * np.pi) - 3*np.pi/2)
+
+        obs = {"goal_dist":np.array([self.distance(self.goal)], dtype=np.float32),
+               "agent_yaw":np.array([self.yaw], dtype=np.float32),
+               "to_goal_yaw":np.array([self.to_goal_yaw], dtype=np.float32),
                "ray_view":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
@@ -211,50 +242,3 @@ class ThiefEnv_cont(gym.Env):
         if self._physics_client:
             p.disconnect(self._physics_client)
 
-
-"""
-env = ThiefEnv_cont(render_mode="human")
-obs, info = env.reset()
-print (env.grid)
-
-for i in range(500):
-    #action = env.action_space.sample()
-    action = (0,1)
-    print (action)
-    obs, reward, terminated, truncated, info = env.step(action)
-    print (reward)
-    time.sleep(1)
-    if terminated or truncated:
-        print ("terminated")
-        env.reset()
-
-while True:
-    user_input = input("Action (turn forward): ")
-
-    if user_input.lower() == "q":
-        print("Exiting.")
-        break
-
-    try:
-        turn, forward = map(float, user_input.split())
-    except ValueError:
-        print("❌ Invalid input. Enter two numbers like: 0.2 -0.5")
-        continue
-
-    # Clip for safety
-    action = np.clip(
-        np.array([turn, forward], dtype=np.float32),
-        env.action_space.low,
-        env.action_space.high
-    )
-
-    obs, reward, terminated, truncated, info = env.step(action)
-
-    print(f"Reward: {reward:.3f}")
-    print(f"Position: {env.goal_vector}")
-    print(f"Has object: {env.has_object}, Alert: {env.alert_flag}")
-
-    if terminated or truncated:
-        print("Episode ended. Resetting...\n")
-        obs, info = env.reset()
-"""

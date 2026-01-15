@@ -9,7 +9,6 @@ from Pybullet_sensors import *
 V2 : 
 Espacio continuo agente
 2 tipos acciones : rotacion [-1,1] equivalencia -70°,70° / velocidad [-1,1] 
-recompensas : 
 zonas de camaras : circulares y rotativas 4 seleccionadas al azar entre 8
 """
 
@@ -33,7 +32,7 @@ class Multiagent_patrol(gym.Env):
         # Observation : discrete
         self.observation_space = spaces.Dict({
             "ray_view": spaces.Box(low=0.0,high=1.0,shape=(22,),dtype=np.float32),
-            "heatmap": spaces.Box(low=0.0,high=np.inf, shape=(15,15),dtype=np.float32),
+            "heatmap": spaces.Box(low=0.0,high=np.inf, shape=(16,16),dtype=np.float32),
             "patrol_pos": spaces.Box(low=0, high=1, shape=(2,), dtype=np.float32),
             "goal": spaces.Box(low=0, high=1, shape=(2,), dtype=np.float32),
             "exits": spaces.Box(low=0, high=1, shape=(3,2), dtype=np.float32),
@@ -53,7 +52,7 @@ class Multiagent_patrol(gym.Env):
         self.grid = np.zeros((15,15), dtype=np.int8) # Store world layout (walls, watched tiles, etc.)
         self.types = {}
         self.cameras = None
-        self.camera_heatmap = np.zeros((15,15), dtype=np.float32)
+        self.camera_heatmap = np.zeros((16,16), dtype=np.float32)
 
     def _load_world(self):
         self.grid.fill(0)  # 0 = empty
@@ -76,7 +75,7 @@ class Multiagent_patrol(gym.Env):
         # Create above structure for sensor agents
         create_floor()
         self.types, self.grid = create_structure(self.grid, self.types)     # walls = 1
-        self.cameras = create_cameras([self.sensor_patrol,self.sensor_thief], self.types) #watched = 2
+        self.cameras = create_cameras([self.sensor_patrol,self.sensor_thief], self.types, nbr=4) #watched = 2
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
         p.setCollisionFilterPair(self.object_body, self.sensor_thief, -1, -1, enableCollision=1)
 
@@ -107,10 +106,13 @@ class Multiagent_patrol(gym.Env):
         p.setGravity(0,0,-9.8)
         self._load_world()
         self.current_steps = 0
+        self.has_object = 0
+        self.alert_flag = 0
+        self.alert_flag_thief = 0
 
         # Patrol's position and initial obs
         self.ray_results_patrol = raycast_view_cone(self.sensor_patrol, fov=np.pi/2, num_rays=11, max_distance=5.0, height=0.05, debug=False)
-        obs = {"ray_view":self._get_observation(),
+        obs = {"ray_view":self._get_observation(self.ray_results_patrol),
                "heatmap" : self.camera_heatmap,
                "patrol_pos" : self.patrol_pos / 14,
                "goal": self.goal / 14,
@@ -146,23 +148,23 @@ class Multiagent_patrol(gym.Env):
         if self.render_mode =="human" : 
             debug = True
 
-        ray_results = raycast_view_cone(self.sensor_patrol, fov=2*np.pi/2, num_rays=20, max_distance=3.0, height=0.05, debug=debug)
+        ray_results = raycast_view_cone(self.sensor_patrol, fov=2*np.pi/2, num_rays=10, max_distance=3.0, height=0.05, debug=debug)
         l= []
         for r in ray_results : 
             id = r[0]
-            type = self.types[id]
+            type = self.types.get(id, 0)
             l.append(type)
         vincinity = set(l)
         if 3 in vincinity: #get closer to points of interest : object / exit
             reward += 0.2
         dist = self.distance(self.new_patrol_pos, self.patrol_pos)
-        reward += 0.4 * dist #Stay in movement
+        reward += 0.6 * dist #Stay in movement
 
         reward += 0.4 * (1.0 - self.coverage()) #Patrol out of cameras area
 
         #Avoid often watched tiles
-        x, y = int(self.patrol_pos[0]), int(self.patrol_pos[1])
-        reward -= 0.5 * self.camera_heatmap[x, y]
+        x, y = np.clip((int(self.patrol_pos[0])),0,15), np.clip((int(self.patrol_pos[1])),0,15)
+        reward -= 0.5 * (self.camera_heatmap[x, y])/np.max(self.camera_heatmap + 1e-5)
 
         if self.thief_in_view() :
             reward += 0.4
@@ -171,7 +173,7 @@ class Multiagent_patrol(gym.Env):
             if self.alert_flag > 0 :
                 reward -= 0.4
                 self.alert_flag -= 1
-            reward -= 2
+                reward -= 2
 
         if get_contact_object(self.sensor_thief, self.object_body) and self.has_object == 0:
             self.has_object = 1
@@ -190,14 +192,23 @@ class Multiagent_patrol(gym.Env):
 
         #Thief acts : 
         thief_obs = self.observation_thief()  # define what the helper sees
-        thief_action, _ = self.thief_model.predict(thief_obs)
+        thief_action, _ = self.thief_model.predict(thief_obs, deterministic=True)
 
         turn = float(thief_action[0])  # e.g. -1 = full left, 1 = full right
         forward = float(thief_action[1])  # e.g. -1 = full backward, 1 = full forward
 
-        move_agent(self.material_thief, self.sensor_thief, turn, forward)
+        move_agent(self.material_thief, turn, forward)
+
+        # Patrol acts :
+        action = np.clip(action, self.action_space.low, self.action_space.high)
+        turn = float(action[0])  # e.g. -1 = full left, 1 = full right
+        forward = float(action[1])  # e.g. -1 = full backward, 1 = full forward
+
+        move_agent(self.material_patrol, turn, forward)
         p.stepSimulation()
 
+        
+        #Update Thief pos
         pos, orn = p.getBasePositionAndOrientation(self.material_thief)
         pos_ghost=(pos[0],pos[1], 0.5)
         roll, pitch, yaw = p.getEulerFromQuaternion(orn)
@@ -206,19 +217,11 @@ class Multiagent_patrol(gym.Env):
             self.sensor_thief,
             pos_ghost,  # keep at same position
             new_orn)
-        
         x = pos[0]
         y = pos[1]
         self.thief_pos = np.array([x,y])
 
-        # Patrol acts :
-        action = np.clip(action, self.action_space.low, self.action_space.high)
-        turn = float(action[0])  # e.g. -1 = full left, 1 = full right
-        forward = float(action[1])  # e.g. -1 = full backward, 1 = full forward
-
-        move_agent(self.material_patrol, self.sensor_patrol, turn, forward)
-        p.stepSimulation()
-
+        #Update position of patrol
         pos, orn = p.getBasePositionAndOrientation(self.material_patrol)
         pos_ghost=(pos[0],pos[1], 0.5)
         roll, pitch, yaw = p.getEulerFromQuaternion(orn)
@@ -227,11 +230,11 @@ class Multiagent_patrol(gym.Env):
             self.sensor_patrol,
             pos_ghost,  # keep at same position
             new_orn)
-
-        #Update position of patrol
         x = pos[0]
         y = pos[1]
         self.new_patrol_pos = np.array([x,y])
+
+        
 
         debug=False
         if self.render_mode =="human" : 
@@ -253,7 +256,6 @@ class Multiagent_patrol(gym.Env):
         if self.has_object == 1 and get_contact_exits(self.sensor_thief, self.exit_ids) : 
             terminated = True
             reward -= 50
-
         self.update_camera_heatmap()
         obs = {"ray_view":self._get_observation(self.ray_results_patrol),
                "heatmap" : self.camera_heatmap / np.max(self.camera_heatmap + 1e-5),
@@ -276,7 +278,7 @@ class Multiagent_patrol(gym.Env):
         l= []
         for r in ray_result : 
             id = r[0]
-            type = self.types[id]/3
+            type = self.types.get(id, 0)/3
             distance_ratio = r[2]
             l.append(type)
             l.append(distance_ratio)
@@ -296,7 +298,7 @@ class Multiagent_patrol(gym.Env):
         camera_count = 0
         for r in self.ray_results_patrol : 
             id = r[0]
-            type = self.types[id]
+            type = self.types.get(id, 0)
             if type == 2 :
                 camera_count +=1
         coverage = camera_count / 11
@@ -308,8 +310,8 @@ class Multiagent_patrol(gym.Env):
             if self.types.get(hit_id, 0) == 2:  # camera
                 hit_pos = r[3]  # hit position in world coords
                 gx, gy = int(hit_pos[0]//1), int(hit_pos[1]//1)
-                if 0 <= gx < 15 and 0 <= gy < 15:
-                    self.camera_heatmap[gx, gy] += 1
+                if 0 <= gx < 16 and 0 <= gy < 16:
+                    self.camera_heatmap[gx, gy] = min(self.camera_heatmap[gx, gy] + 1,50)
 
     def observation_thief(self):
         debug=False
@@ -321,7 +323,8 @@ class Multiagent_patrol(gym.Env):
             self.alert_flag_thief +=1
             self.alert_flag_thief = min(self.alert_flag, 5)
         else :
-            self.alert_flag_thief -= 1
+            if self.alert_flag_thief > 0:
+                self.alert_flag_thief -= 1
 
         obs = {"goal_vector":self.calculate_goal_vector(),
                "ray_view":self._get_observation(ray_results_thief),

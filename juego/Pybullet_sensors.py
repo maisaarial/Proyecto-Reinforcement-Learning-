@@ -1,12 +1,16 @@
 import pybullet as p
-import pybullet_data
 import random
 import numpy as np
-import time
 import math
-from Pybullet_edificio import create_structure, create_floor, create_thief, create_object, set_exit_tiles
 
-def create_cameras(sensor_bodies:list, types):
+
+#####################################
+
+######## Camera functions ###########
+
+#####################################
+
+def create_cameras(sensor_bodies:list, types, nbr):
     #Defining Cameras
     triangle1_col = p.createCollisionShape(shapeType=p.GEOM_MESH, fileName="/juego/mesh/triangle1.obj", meshScale=[1, 1, 1])
     triangle1_vis = p.createVisualShape(shapeType=p.GEOM_MESH, fileName="/juego/mesh/triangle1.obj", meshScale=[1, 1, 1], rgbaColor=[1, 0, 0, 1])
@@ -28,7 +32,7 @@ def create_cameras(sensor_bodies:list, types):
         {"collision":triangle4_col, "visual": triangle4_vis, "rotation":"anti", "position":[12, 9, 0], "orientation":p.getQuaternionFromEuler([0, 0, np.pi])},
         ]
     
-    chosen_cameras = random.sample(cameras,k=4)
+    chosen_cameras = random.sample(cameras,k=nbr)
     built_cams={}
     for cam in chosen_cameras :
         new_cam = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=cam["collision"], baseVisualShapeIndex=cam["visual"],
@@ -57,6 +61,16 @@ def rotate_cameras(cameras, angle):
             pos,  # keep at same position
             new_orn        # new orientation
         )  
+
+
+
+
+
+#####################################
+
+######## Sensor functions ###########
+
+#####################################
 
 def raycast_view_cone(sensor_thief,fov=np.pi / 2, num_rays=21, max_distance=6.0,height=0.25, debug=True):
     """
@@ -108,7 +122,6 @@ def get_contact_object(sensor_thief, object):
     contact = False
     contacts = p.getContactPoints(bodyA=object, bodyB=sensor_thief)
     if contacts:
-        print ("OBJECT")
         contact = True
     return contact
 
@@ -117,14 +130,31 @@ def get_contact_exits(sensor_thief, exits):
     for e in exits:
         contacts = p.getContactPoints(bodyA=e, bodyB=sensor_thief)
         if contacts:
-            print("EXITS")
             contact=True
     return contact
 
+def get_contact_walls(material_thief, blocks):
+    contact = False
+    for e in blocks:
+        contacts = p.getContactPoints(bodyA=e, bodyB=material_thief)
+        if contacts:
+            contact=True
+    return contact
+
+
+
+
+
+#####################################
+
+######## Movement function ##########
+
+#####################################
+
 def move_agent(material_thief, rotation, velocity):
     """
-    rotation: float in [-1, 1] → relative yaw offset [-75°, +75°]
-    force:    float in [-1, 1] → forward/backward thrust
+    rotation: float in [-1, 1] → relative yaw offset [-60°, +60°]
+    force:    float in [-1, 1] → forward/backward velocity [-5000, +5000]
     """
     MAX_YAW_OFFSET_DEG = 60.0     # rotation range
 
@@ -159,7 +189,7 @@ def move_agent(material_thief, rotation, velocity):
         new_orn
     )
 
-    factor = 500
+    factor = 5000
     velocity *= factor 
     velocity = [0, velocity, 0]
     position, orientation = p.getBasePositionAndOrientation(material_thief)
@@ -176,86 +206,3 @@ def move_agent(material_thief, rotation, velocity):
     # Transform the force vector from local to world coordinates
     vel_world = np.dot(rotation_matrix, velocity)
     p.resetBaseVelocity(material_thief, linearVelocity=vel_world)
-
-    
-
-
-
-"""
-# Connect to GUI
-p.connect(p.GUI)
-p.setAdditionalSearchPath(pybullet_data.getDataPath())
-p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
-
-
-p.resetDebugVisualizerCamera(
-    cameraDistance=15, 
-    cameraYaw=0, 
-    cameraPitch=0, 
-    cameraTargetPosition=[7, 7, -3])
-
-p.resetDebugVisualizerCamera(
-    cameraDistance= 7, 
-    cameraYaw=0, 
-    cameraPitch=0, 
-    cameraTargetPosition=[7, 7, -3])
-
-
-p.resetDebugVisualizerCamera(
-    cameraDistance=15, 
-    cameraYaw=0, 
-    cameraPitch=-89, 
-    cameraTargetPosition=[7, 7, 0])
-
-grid = np.zeros((15,15), dtype=np.int8)
-types = {}
-
-thief_pos = np.array([7,0])
-sensor_thief = create_thief(thief_pos)
-floor = create_floor()
-print(sensor_thief)
-structure = create_structure(grid, types=types)
-obj_body, grid, obj_position = create_object(grid=grid)
-types[obj_body] = 3
-types[-1] = 0
-types[0] = 0
-
-thief_pos = np.array([7,0])
-material_thief = create_thief(thief_pos, pos_height=-3.5, Mass=1)
-
-
-
-
-floor = create_floor(pos_height=-4.2)
-structure = create_structure(grid, pos_height=-3)
-
-# Turn on gravity (Earth-like)
-p.setGravity(0, 0, -9.8)
-cameras = create_cameras([sensor_thief], types=types)
-print(types)
-while True:
-
-    rotate_cameras(cameras=cameras, angle=0.05)
-    a=random.random()*2 - 1
-    b=random.random()*2 - 1
-    move_agent(material_thief,0, 1 )
-
-    ray_results = raycast_view_cone(sensor_thief,fov=2*np.pi,num_rays=20,max_distance=3.0,height=0.05,debug=True)
-    l= []
-    for r in ray_results : 
-        id = r[0]
-        l.append(types[id])
-    print(set(l))
-
-    get_contact_cameras(sensor_thief, cameras)
-    p.stepSimulation()
-    pos, orn = p.getBasePositionAndOrientation(material_thief)
-    pos_ghost=(pos[0],pos[1], 0.5)
-    roll, pitch, yaw = p.getEulerFromQuaternion(orn)
-    new_orn = p.getQuaternionFromEuler([0.0, 0.0, yaw])
-    p.resetBasePositionAndOrientation(
-        sensor_thief,
-        pos_ghost,  # keep at same position
-        new_orn)
-    time.sleep(0.01)
-"""

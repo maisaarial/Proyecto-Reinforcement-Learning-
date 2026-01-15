@@ -9,8 +9,8 @@ from Pybullet_sensors import *
 V2 : 
 Espacio continuo agente
 2 tipos acciones : rotacion [-1,1] equivalencia -70°,70° / velocidad [-1,1] 
-recompensas : 
 zonas de camaras : circulares y rotativas 4 seleccionadas al azar entre 8
+# 1era Version de observacion
 """
 
 class Multiagent_Thief(gym.Env):
@@ -72,7 +72,7 @@ class Multiagent_Thief(gym.Env):
         # Create above structure for sensor agents
         create_floor()
         self.types, self.grid = create_structure(self.grid, self.types)     # walls = 1
-        self.cameras = create_cameras([self.sensor_patrol,self.sensor_thief], self.types) #watched = 2
+        self.cameras = create_cameras([self.sensor_patrol,self.sensor_thief], self.types, nbr=4) #watched = 2
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
         p.setCollisionFilterPair(self.object_body, self.sensor_thief, -1, -1, enableCollision=1)
 
@@ -103,10 +103,18 @@ class Multiagent_Thief(gym.Env):
         p.setGravity(0,0,-9.8)
         self._load_world()
         self.current_steps = 0
+        self.has_object = 0
+        self.alert_flag = 0
+        self.alert_flag_patrol = 0
 
         # Thief's position and initial obs
+        debug=False
+        if self.render_mode =="human" : 
+            debug = True
+        ray_results_thief = raycast_view_cone(self.sensor_thief, fov=np.pi/2, num_rays=11, max_distance=5.0, height=0.05, debug=debug)
+
         obs = {"goal_vector":self.calculate_goal_vector(),
-               "ray_view":self._get_observation(self.sensor_thief),
+               "ray_view":self._get_observation(ray_results_thief),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
         return obs, {}
@@ -144,7 +152,8 @@ class Multiagent_Thief(gym.Env):
             self.alert_flag +=1
             self.alert_flag = min(self.alert_flag, 5)
         else :
-            self.alert_flag -= 1
+            if self.alert_flag > 0 : 
+                self.alert_flag -= 1
 
         if get_contact_object(self.sensor_thief, self.object_body) and self.has_object == 0:
             self.has_object = 1
@@ -165,7 +174,7 @@ class Multiagent_Thief(gym.Env):
         turn = float(action[0])  # e.g. -1 = full left, 1 = full right
         forward = float(action[1])  # e.g. -1 = full backward, 1 = full forward
 
-        move_agent(self.material_thief, self.sensor_thief, turn, forward)
+        move_agent(self.material_thief, turn, forward)
         p.stepSimulation()
 
         pos, orn = p.getBasePositionAndOrientation(self.material_thief)
@@ -188,11 +197,11 @@ class Multiagent_Thief(gym.Env):
 
         # Patrol acts :
         patrol_obs = self.observation_patrol()
-        patrol_action, _ = self.patrol_model.predict(patrol_obs)
+        patrol_action, _ = self.patrol_model.predict(patrol_obs, deterministic=True)
         turn = float(patrol_action[0])  # e.g. -1 = full left, 1 = full right
         forward = float(patrol_action[1])  # e.g. -1 = full backward, 1 = full forward
 
-        move_agent(self.material_patrol, self.sensor_patrol, turn, forward)
+        move_agent(self.material_patrol, turn, forward)
         p.stepSimulation()
 
         pos, orn = p.getBasePositionAndOrientation(self.material_patrol)
@@ -223,8 +232,7 @@ class Multiagent_Thief(gym.Env):
         if self.has_object == 1 and get_contact_exits(self.sensor_thief, self.exit_ids) :
             terminated= True
             reward = 50
-            
-        self.update_camera_heatmap()
+
         obs = {"goal_vector":self.calculate_goal_vector(),
                "ray_view":self._get_observation(ray_results_thief),
                "has_object": self.has_object,
@@ -243,7 +251,7 @@ class Multiagent_Thief(gym.Env):
         l= []
         for r in ray_results : 
             id = r[0]
-            type = self.types[id]/3
+            type = self.types.get(id, 0)/3
             distance_ratio = r[2]
             l.append(type)
             l.append(distance_ratio)

@@ -3,8 +3,6 @@ from gymnasium import spaces
 import numpy as np
 import pybullet as p
 import pybullet_data
-import time
-import random
 from Pybullet_edificio import create_structure, create_floor, set_watched_tiles, create_thief, create_object, set_exit_tiles
 
 """
@@ -185,42 +183,3 @@ class ThiefEnv_V1c(gym.Env):
     def close(self):
         if self._physics_client:
             p.disconnect(self._physics_client)
-
-
-
-"""
-env = ThiefEnv_V1c(render_mode="human")
-obs, info = env.reset()
-print (env.grid)
-
-for i in range(200):
-    action = env.action_space.sample()
-    print (action)
-    obs, reward, terminated, truncated, info = env.step(action)
-    print (obs)
-    time.sleep(2)
-    if terminated or truncated:
-        print ("terminated")
-        env.reset()
-
-for i in range(200):
-    # Pedir acción al usuario
-    try:
-        action = int(input("Introduce acción (0: up, 1: down, 2: left, 3: right, 4: stay/take): "))
-    except ValueError:
-        print("Entrada no válida, usando acción 4 por defecto")
-        action = 4
-
-    # Asegurarse que la acción está dentro del rango permitido
-    if action not in range(env.action_space.n):
-        print(f"Acción fuera de rango, usando acción 4 por defecto")
-        action = 4
-
-    obs, reward, terminated, truncated, info = env.step(action)
-    print("Observación:", obs)
-    print("Recompensa:", reward)
-
-    if terminated or truncated:
-        print("Terminado")
-        obs, info = env.reset()
-"""
