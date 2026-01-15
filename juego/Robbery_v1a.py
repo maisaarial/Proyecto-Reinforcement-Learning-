@@ -204,9 +204,9 @@ class ThiefEnv_V1a(gym.Env):
 
         view_matrix = p.computeViewMatrixFromYawPitchRoll(
             cameraTargetPosition=[7.5, 7.5, 0.0],
-            distance=18,
-            yaw=45,
-            pitch=-60,
+            distance=25,
+            yaw=0,
+            pitch=-89.9,
             roll=0,
             upAxisIndex=2,
             physicsClientId=self._physics_client,
@@ -215,12 +215,11 @@ class ThiefEnv_V1a(gym.Env):
         proj_matrix = p.computeProjectionMatrixFOV(
             fov=60,
             aspect=width / height,
-            nearVal=0.1,
-            farVal=100.0,
+            nearVal=0.01,
+            farVal=200.0,
         )
 
-        # (opcional) un step para actualizar
-        p.stepSimulation(physicsClientId=self._physics_client)
+        renderer = p.ER_TINY_RENDERER
 
         _, _, px, _, _ = p.getCameraImage(
             width=width,

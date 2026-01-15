@@ -21,7 +21,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from gymnasium.wrappers import TimeLimit, RecordVideo
 
 
-# Importa los 3 entornos (tus scripts)
+# Importar los 3 entornos 
 from Robbery_v1a import ThiefEnv_V1a
 from Robbery_v1b import ThiefEnv_V1b
 from Robbery_v1c import ThiefEnv_V1c
@@ -88,10 +88,6 @@ class CastObsToFloat32(gym.ObservationWrapper):
 class RemoveKeysObs(gym.ObservationWrapper):
     """
     Elimina claves de la observación (y del observation_space).
-
-    Esto es CLAVE para curriculum si alguna versión (v1c) devuelve una key extra
-    (por ejemplo "exits") pero tú quieres mantener el mismo input al policy
-    entre todas las etapas.
     """
     def __init__(self, env, keys_to_remove=("exits",)):
         super().__init__(env)
@@ -103,14 +99,6 @@ class RemoveKeysObs(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Dict({
             k: v for k, v in old.spaces.items() if k not in self.keys_to_remove
         })
-
-    '''
-    def observation(self, obs):
-        obs = dict(obs)
-        for k in self.keys_to_remove:
-            obs.pop(k, None)
-        return obs
-    '''
 
     def observation(self, obs):
         # Si no es dict, te lo decimos clarito
@@ -148,27 +136,9 @@ def make_env(env_cls, rank: int, seed: int, render: bool = False):
     set_random_seed(seed)
     return _init
 
-#Guardar excels 
-'''
-def get_last_eval_mean_std(eval_dir: str):
-    """
-    Lee el último evaluation guardado por EvalCallback en eval_dir/evaluations.npz
-    Devuelve (mean, std). Si no existe, devuelve (None, None).
-    """
-    npz_path = os.path.join(eval_dir, "evaluations.npz")
-    if not os.path.exists(npz_path):
-        return None, None
-
-    data = np.load(npz_path)
-    # 'results' suele ser shape (n_evals, n_eval_episodes)
-    results = data["results"]
-    if results.size == 0:
-        return None, None
-
-    last = results[-1]  # rewards del último bloque de evaluación
-    return float(np.mean(last)), float(np.std(last))
-'''
-
+# ============================================================
+# RECOMPENSA: guardar excel para hacer seguimiento de recompensas
+# ============================================================
 def append_row_to_excel(xlsx_path: str, sheet_name: str, row_dict: dict):
     """
     Crea el excel si no existe. Si existe, añade una fila al final sin borrar nada.
@@ -194,14 +164,16 @@ def append_row_to_excel(xlsx_path: str, sheet_name: str, row_dict: dict):
 
     wb.save(xlsx_path)
 
-#Para el video 
+# ============================================================
+# VIDEO: intento de guardar un .mp4 del entrenamiento
+# ============================================================
 def record_one_episode(model, env_cls, video_dir, stage_name, seed=0):
     os.makedirs(video_dir, exist_ok=True)
 
     # Creamos el env base
     env = env_cls(render_mode="rgb_array")
     
-    # Aplicamos wrappers manualmente pero sin repetir el render_mode
+    # Aplicamos wrappers manualmente sin repetir el render_mode
     env = TimeLimit(env, max_episode_steps=250)
     env = RemoveKeysObs(env, keys_to_remove=("exits",))
     env = FlattenGridObs(env)
@@ -220,52 +192,10 @@ def record_one_episode(model, env_cls, video_dir, stage_name, seed=0):
     
     while not (terminated or truncated):
         action, _ = model.predict(obs, deterministic=True)
-        # Asegúrate de pasar la acción como int si es Discrete
+        # Asegúrarse de pasar la acción como int si es Discrete
         obs, reward, terminated, truncated, info = env.step(int(action))
 
     env.close()
-
-    '''
-def record_one_episode(model, env_cls, video_dir, seed=0):
-    os.makedirs(video_dir, exist_ok=True)
-
-    # 1. Crear el entorno con render_mode
-    env = env_cls(render_mode="rgb_array")
-    
-    # 2. APLICAR LOS MISMOS WRAPPERS QUE EN EL ENTRENAMIENTO
-    env = TimeLimit(env, max_episode_steps=250)
-    env = RemoveKeysObs(env, keys_to_remove=("exits",))
-    env = FlattenGridObs(env)
-    env = CastObsToFloat32(env)
-    
-    # 3. Añadir el wrapper de vídeo al final
-    env = RecordVideo(env, video_folder=video_dir, episode_trigger=lambda e: True, name_prefix="final_eval")
-
-    obs, info = env.reset(seed=seed)
-    terminated = truncated = False
-    
-    while not (terminated or truncated):
-        # Ahora obs tendrá forma (9,) y el modelo no fallará
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = env.step(int(action))
-
-    env.close()
-    
-def record_one_episode(model, env_cls, video_dir, seed=0):
-    os.makedirs(video_dir, exist_ok=True)
-
-    env = env_cls(render_mode="rgb_array")
-    env = TimeLimit(env, max_episode_steps=250)
-    env = RecordVideo(env, video_folder=video_dir, episode_trigger=lambda e: True)
-
-    obs, info = env.reset(seed=seed)
-    terminated = truncated = False
-    while not (terminated or truncated):
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = env.step(int(action))
-
-    env.close()
-'''
 
 # ============================================================
 # MAIN (curriculum por etapas)
@@ -276,11 +206,11 @@ def main():
     # 1) Config general
     # -------------------------
     SEED = 42
-    N_ENVS = 1  # mantén 1 para debug estable; cuando todo esté perfecto, sube
-    # OJO: si usas PyBullet + Subproc a veces se atasca; DummyVecEnv suele ser más estable.
+    N_ENVS = 1  
 
     # -------------------------
     # 2) Hiperparámetros PPO
+    # Se cambian los valores en este apartado
     # -------------------------
     LR = 1e-4
     GAMMA = 0.99
@@ -317,7 +247,7 @@ def main():
     # 4) Definir etapas del curriculum
     # -------------------------
     stages = [
-        dict(name="stage1_find",   env_cls=ThiefEnv_V1a, timesteps=20_000),
+        dict(name="stage1_find",   env_cls=ThiefEnv_V1a, timesteps=5_000),
         dict(name="stage2_take",   env_cls=ThiefEnv_V1b, timesteps=200_000),
         dict(name="stage3_exit",   env_cls=ThiefEnv_V1c, timesteps=200_000),
     ]
@@ -417,38 +347,7 @@ def main():
         video_dir = os.path.join(run_dir, "videos", stage_name, str(int(time.time())))
         record_one_episode(model, env_cls, video_dir, stage_name=stage_name, seed=SEED)
         print(f"🎥 Video guardado en: {video_dir}")
-        '''
-        # --- Leer último evaluation (creado por EvalCallback) ---
-        eval_dir = os.path.join(run_dir, f"eval_{stage_name}")
-        mean_r, std_r = get_last_eval_mean_std(eval_dir)
-
-        # --- Excel dentro de la carpeta juego ---
-        base_dir = os.path.dirname(os.path.abspath(__file__))  # carpeta donde está este .py (juego/)
-        results_xlsx = os.path.join(base_dir, "results.xlsx")
-
-        append_row_to_excel(
-            xlsx_path=results_xlsx,
-            sheet_name="curriculum_runs",
-            row_dict={
-                "run_name": run_name,
-                "stage": stage_name,
-                "timesteps_stage": stage_timesteps,
-                "mean_reward": mean_r,
-                "std_reward": std_r,
-                "LR": LR,
-                "GAMMA": GAMMA,
-                "N_STEPS": N_STEPS,
-                "BATCH_SIZE": BATCH_SIZE,
-                "N_EPOCHS": N_EPOCHS,
-                "ENT_COEF": ENT_COEF,
-                "GAE_LAMBDA": GAE_LAMBDA,
-                "CLIP_RANGE": CLIP_RANGE,
-            }
-        )
-
-        print(f"📄 Excel actualizado: {results_xlsx} | {stage_name} mean={mean_r} std={std_r}")
-        '''
-
+        
         vec_env.close()
         eval_env.close()
 
@@ -458,39 +357,6 @@ def main():
     final_path = os.path.join(run_dir, "final_curriculum_model.zip")
     model.save(final_path)
     print(f"\n🏁 Curriculum terminado. Modelo final: {final_path}")
-
-    '''
-    # --- Sacar mean/std del último evaluation y guardarlo a Excel ---
-    mean_r, std_r = evaluate_policy(
-        model,
-        eval_env,
-        n_eval_episodes=5,
-        deterministic=True,
-        return_episode_rewards=False
-    )
-
-    results_xlsx = os.path.join("curr", "results.xlsx")  # o donde quieras
-    append_row_to_excel(
-        xlsx_path=results_xlsx,
-        sheet_name="curriculum_runs",
-        row_dict={
-            "run_name": run_name,
-            "stage": stage_name,
-            "timesteps_stage": stage_timesteps,
-            "mean_reward": mean_r,
-            "std_reward": std_r,
-            "LR": LR,
-            "GAMMA": GAMMA,
-            "N_STEPS": N_STEPS,
-            "BATCH_SIZE": BATCH_SIZE,
-            "N_EPOCHS": N_EPOCHS,
-            "ENT_COEF": ENT_COEF,
-            "GAE_LAMBDA": GAE_LAMBDA,
-            "CLIP_RANGE": CLIP_RANGE,
-        }
-    )
-    print(f"📄 Log guardado en Excel: {results_xlsx} (stage={stage_name})")
-    '''
 
 if __name__ == "__main__":
     main()
