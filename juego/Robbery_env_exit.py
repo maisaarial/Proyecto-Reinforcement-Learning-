@@ -13,7 +13,7 @@ recompensas : fijas (+ al encontrar objeto y salir  - al perder) + dinamica al a
 zonas de camaras : circulares y rotativas 4 seleccionadas al azar entre 8
 """
 
-class ThiefEnv_complete(gym.Env):
+class ThiefEnv_exit(gym.Env):
     metadata = {"render_modes": ["human"]}
 
     def __init__(self, max_steps=1000, render_mode=None):
@@ -68,7 +68,7 @@ class ThiefEnv_complete(gym.Env):
         # Create above structure for sensor thief
         create_floor()
         self.types, self.grid = create_structure(self.grid, self.types)     # walls = 1
-        self.cameras = create_cameras([self.sensor_thief], self.types, nbr=4)    # watched = 2
+        #self.cameras = create_cameras([self.sensor_thief], self.types, nbr=4)    # watched = 2
         self.object_body, self.grid, self.object_pos = create_object(self.grid)  # object = 3
         p.setCollisionFilterPair(self.object_body, self.sensor_thief, -1, -1, enableCollision=1)
 
@@ -149,7 +149,7 @@ class ThiefEnv_complete(gym.Env):
     
     def step(self, action):
         #Update environment
-        rotate_cameras(self.cameras, angle=0.05)
+        #rotate_cameras(self.cameras, angle=0.05)
 
         # Continuous controls
         if self.has_object == 0:
@@ -164,6 +164,7 @@ class ThiefEnv_complete(gym.Env):
         move_agent(self.material_thief, turn, forward)
         p.stepSimulation()
 
+        
         pos, orn = p.getBasePositionAndOrientation(self.material_thief)
         pos_ghost=(pos[0],pos[1], 0.5)
         roll, pitch, yaw = p.getEulerFromQuaternion(orn)
@@ -181,13 +182,6 @@ class ThiefEnv_complete(gym.Env):
         if get_contact_walls(self.sensor_thief, self.blocks):
             reward -= 2   
         reward -= 2
-
-        if get_contact_cameras(self.sensor_thief, self.cameras) :
-            reward -= 5
-            self.alert_flag +=1
-            self.alert_flag = min(self.alert_flag, 5)
-        else :
-            self.alert_flag = 0
 
         if get_contact_object(self.sensor_thief, self.object_body):
             self.has_object = 1

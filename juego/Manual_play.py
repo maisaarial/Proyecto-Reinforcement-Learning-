@@ -4,6 +4,7 @@ from Robbery_v1c import ThiefEnv_V1c
 from Robbery_env_camless_exitless import ThiefEnv_camexitless
 from Robbery_env_cams_exitless import ThiefEnv_cams_exitless
 from Robbery_env_complete import ThiefEnv_complete
+from Robbery_env_exit import ThiefEnv_exit
 import numpy as np
 
 def run_env(type):
@@ -60,7 +61,7 @@ def run_env(type):
                 print("Episode ended. Resetting...\n")
                 obs, info = env.reset()
 
-env = ThiefEnv_complete(render_mode="human")
+env = ThiefEnv_exit(render_mode="human")
 obs, info = env.reset()
 run_env("continuous")
 

@@ -136,9 +136,9 @@ class ThiefEnv_camexitless(gym.Env):
             dist = 0
         heading_reward = np.cos(self.to_goal_yaw)
         delta = self.prev_dist - dist
-        if dist < 0.2 :
+        if heading_reward > 0 :
             alpha = 0
-        return 10*delta + 2.0 * alpha * heading_reward
+        return 3*delta + 0.2 * alpha * heading_reward
 
     def calculate_goal_vector(self):
         vector = (self.goal - self.thief_pos)
@@ -169,8 +169,9 @@ class ThiefEnv_camexitless(gym.Env):
         self.thief_pos = np.array([x,y])
         reward = self.calculate_reward()   
         if get_contact_walls(self.sensor_thief, self.blocks):
-            reward -=0.2   
-        reward -= 0.005 * self.current_steps
+            reward -= 2   
+            #print(f"contact")
+        reward -= 2
 
         terminated = False
         truncated = False
@@ -179,7 +180,7 @@ class ThiefEnv_camexitless(gym.Env):
         if get_contact_object(self.sensor_thief, self.object_body):
             self.has_object = 1
             terminated = True
-            reward +=50
+            reward += 200 * (1 - self.current_steps / self.max_steps)
 
         if self.current_steps>self.max_steps : 
             truncated = True
@@ -200,7 +201,7 @@ class ThiefEnv_camexitless(gym.Env):
                "ray_view":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
-        return obs, reward, terminated, truncated, {}
+        return obs, reward/10, terminated, truncated, {}
 
     def _get_observation(self):
         debug=False

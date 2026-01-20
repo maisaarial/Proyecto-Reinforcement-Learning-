@@ -17,6 +17,19 @@ def create_thief(position, pos_height = 0.5, Mass = 0):
     p.changeDynamics(thief_body, -1, lateralFriction=1)
     return thief_body
 
+def create_patrol(position, pos_height = 0.5, Mass = 0):
+    # Create a collision shape (invisible, used for physics)
+    patrol_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5])
+    # Create a visual shape (this is what you see)
+    patrol_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5], rgbaColor=[0, 0, 1, 1])
+    # Create a rigid body with both collision and visual shapes
+    patrol_body = p.createMultiBody(baseMass=Mass,
+                                baseCollisionShapeIndex=patrol_collision,
+                                baseVisualShapeIndex=patrol_visual,
+                                basePosition=[position[0], position[1], pos_height])
+    p.changeDynamics(patrol_body, -1, lateralFriction=1)
+    return patrol_body
+
 def create_object(grid, pos_height=0.5):
     zeros = np.argwhere(grid == 0)
     position = random.choice(zeros)
@@ -158,8 +171,8 @@ def set_exit_tiles(height=-0.45):
     exit_tiles = [(6,0),(7,0),(8,0)]
     ids = []
     for t in exit_tiles:
-        exit_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.05])
-        exit_visual = p.createVisualShape(shapeType=p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.05], rgbaColor=[0, 1, 0, 1])
+        exit_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5])
+        exit_visual = p.createVisualShape(shapeType=p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5], rgbaColor=[0, 1, 0, 1])
         body = p.createMultiBody(
             baseMass=0,
             baseCollisionShapeIndex=exit_collision,

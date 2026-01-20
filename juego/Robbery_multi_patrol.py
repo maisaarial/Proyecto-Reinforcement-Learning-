@@ -3,7 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import pybullet as p
 import pybullet_data
-from Pybullet_edificio import create_structure, create_floor, create_thief, create_object, set_exit_tiles
+from Pybullet_edificio import create_structure, create_floor, create_thief, create_patrol, create_object, set_exit_tiles
 from Pybullet_sensors import *
 """
 V2 : 
@@ -65,8 +65,8 @@ class Multiagent_patrol(gym.Env):
         self.material_thief = create_thief(self.thief_pos, pos_height=-3.5, Mass=1)
         self.sensor_thief = create_thief(self.thief_pos)
 
-        self.material_patrol = create_thief(self.patrol_pos, pos_height=-3.5, Mass=1)
-        self.sensor_patrol = create_thief(self.patrol_pos)
+        self.material_patrol = create_patrol(self.patrol_pos, pos_height=-3.5, Mass=1)
+        self.sensor_patrol = create_patrol(self.patrol_pos)
 
         # Create below structure for material thief
         create_floor(pos_height=-4.2)

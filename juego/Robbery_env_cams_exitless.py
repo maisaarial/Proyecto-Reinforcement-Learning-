@@ -130,12 +130,15 @@ class ThiefEnv_cams_exitless(gym.Env):
     
     def calculate_reward(self):
         alpha = 1
-        dist = self.distance(self.goal)
+        if self.has_object==0:
+            dist = self.distance(self.goal)
+        else :
+            dist = 0
         heading_reward = np.cos(self.to_goal_yaw)
         delta = self.prev_dist - dist
-        if dist < 0.2 :
+        if heading_reward > 0 :
             alpha = 0
-        return 10*delta + 2.0 * alpha * heading_reward
+        return 3*delta + 0.2 * alpha * heading_reward
 
     def calculate_goal_vector(self):
         vector = (self.goal - self.thief_pos)/14
@@ -170,15 +173,16 @@ class ThiefEnv_cams_exitless(gym.Env):
         self.thief_pos = np.array([x,y])
         reward = self.calculate_reward() 
         if get_contact_walls(self.sensor_thief, self.blocks):
-            reward -=0.2   
-        reward -= 0.005 * self.current_steps
+            reward -= 2
+        reward -= 2
 
         if get_contact_cameras(self.sensor_thief, self.cameras) :
-            reward -= 0.1
+            reward -= 50
             self.alert_flag +=1
             self.alert_flag = min(self.alert_flag, 5)
         else :
-            self.alert_flag = 0
+            if self.alert_flag > 0 :
+                self.alert_flag -= 1
 
         terminated = False
         truncated = False
@@ -187,7 +191,7 @@ class ThiefEnv_cams_exitless(gym.Env):
         if get_contact_object(self.sensor_thief, self.object_body):
             self.has_object = 1
             p.removeBody(self.object_body)
-            reward +=50
+            reward += 200 * (1 - self.current_steps / self.max_steps)
             terminated = True
 
         if self.current_steps>self.max_steps : 
@@ -195,7 +199,7 @@ class ThiefEnv_cams_exitless(gym.Env):
 
         if self.alert_flag >4 : 
             terminated = True
-            reward = -50
+            reward = -200
 
         self.goal_vector = self.calculate_goal_vector()
         goal_angle = np.arctan2(self.goal_vector[1], self.goal_vector[0])
@@ -208,7 +212,7 @@ class ThiefEnv_cams_exitless(gym.Env):
                "ray_view":self._get_observation(),
                "has_object": self.has_object,
                "alert_flag": self.alert_flag}
-        return obs, reward, terminated, truncated, {}
+        return obs, reward/10, terminated, truncated, {}
 
     def _get_observation(self):
         debug=False
